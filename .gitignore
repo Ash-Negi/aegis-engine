@@ -4,3 +4,6 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# yfinance cache — regenerable, not source
+math-engine/data/store/

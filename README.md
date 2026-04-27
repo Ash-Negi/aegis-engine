@@ -32,24 +32,51 @@ This project is built to be auditable by design. Every nontrivial decision and m
 
 ## Roadmap
 
-### Phase 1 — Math Engine *(in progress)*
+A five-phase build. Each phase produces something working and demonstrable — no phase depends on completing all prior phases perfectly. Realistic timeline at part-time pace (~20–25 hours/week): roughly 6–8 months.
+
+### Phase 1 — Math Engine *(Weeks 1–4, in progress)*
+
+*Proves: the candidate can handle real financial data and translate textbook math (covariance estimation, Lagrange multipliers, efficient frontier) into production-quality code with proper testing and audit trails.*
 
 - [x] **Week 1** — Data pipeline: fetch via yfinance, clean, log returns, descriptive statistics, correlations
 - [ ] **Week 2** — Covariance estimation: sample, EWMA (λ=0.94 RiskMetrics), Ledoit-Wolf shrinkage, condition number diagnostics, eigendecomposition
 - [ ] **Week 3** — Mean-variance optimizer with expected-return shrinkage; efficient frontier construction; constrained optimization (long-only, sector caps)
 - [ ] **Week 4** — Backtest harness with transaction costs, slippage modeling, rebalancing bands, performance attribution
 
-### Phase 2 — Execution Engine *(planned)*
+### Phase 2 — Signal Development *(Weeks 5–10, planned)*
 
-- Java 21 service handling order routing, position tracking, and reconciliation
-- Redis pub/sub for math-engine ↔ execution-engine communication
-- PostgreSQL audit ledger with full trade history and pre/post-trade snapshots
+*Proves: the candidate understands that markets are non-stationary and can build adaptive systems instead of static optimizers. Distinguishes statistical arbitrage thinking from passive rebalancing.*
 
-### Phase 3 — Distributed Deployment *(planned)*
+- Hidden Markov Model regime detection (low-vol trending, high-vol mean-reverting, crisis)
+- Adaptive weight engine that responds to regime classifications — risk-on tilts toward equity, risk-off tilts toward gold
+- Cointegration testing (Engle-Granger, Johansen) on asset pairs; spread-based rebalance signals when deviations exceed 2σ
 
-- Docker Compose for local dev, AWS EC2 for hosted runs
-- Macro regime layer producing strategic allocations consumed by the tactical math engine
-- Hidden Markov Model for regime classification with external signal validation
+### Phase 3 — Execution Layer *(Weeks 11–16, planned)*
+
+*Proves: the candidate can build a polyglot async system with strong contracts between services, handle real-world execution complexity (partial fills, network failures, idempotency), and reason about audit and reconciliation.*
+
+- Python math engine publishes target weight vectors to Redis (timestamp, confidence, regime, expected turnover)
+- Java 21 / Spring Boot execution engine with virtual-thread message handling
+- Alpaca paper trading integration with full order state machine (PENDING → SENT → PARTIAL_FILL → FILLED / REJECTED)
+- PostgreSQL audit ledger for every order, fill, and portfolio snapshot
+
+### Phase 4 — ML Integration *(Weeks 17–24, planned)*
+
+*Proves: the candidate can apply ML to finance without falling into the in-sample overfitting trap. Demonstrates feature-engineering judgment and an honest take on ML's role (augmenting, not replacing, well-grounded baselines).*
+
+- Macro feature engineering: VIX, yield-curve slope (10Y–2Y), DXY, oil, credit spreads
+- FinBERT sentiment pipeline on Fed minutes, FOMC statements, and financial news
+- Neural regime classifier (LSTM / Transformer) ensembled with the HMM baseline; walk-forward validation throughout
+- Local LLM (quantized Mistral / Llama) for structured signal extraction from macro reports — operational edge over per-token cloud inference
+
+### Phase 5 — Production Hardening *(Weeks 25–30, planned)*
+
+*Proves: the candidate thinks about what happens when the system runs unsupervised — failure modes, observability, safety rails. The difference between a project and a piece of infrastructure.*
+
+- Docker Compose for the full stack: Python + Java + Redis + Postgres, one command
+- Health monitoring dashboard (Grafana / Prometheus): positions, P&L, regime, signal freshness
+- Circuit breakers: max-drawdown halt, signal-staleness halt, position-concentration halt
+- AWS EC2 deployment of the full stack
 
 ## Asset Universe
 
@@ -64,10 +91,12 @@ Four ETFs, each chosen to hedge a different failure mode. See [ADR-003](docs/adr
 
 ## Tech Stack
 
-- **Math Engine:** Python 3.12+ (NumPy, SciPy, Pandas, yfinance)
-- **Execution Engine:** Java 21+ (Spring Boot, Virtual Threads) — *planned*
+- **Math Engine:** Python 3.12+ (NumPy, SciPy, Pandas, yfinance, hmmlearn, scikit-learn)
+- **ML / NLP:** FinBERT, quantized local LLMs (Mistral / Llama) — *planned*
+- **Execution Engine:** Java 21+ (Spring Boot, Virtual Threads), Alpaca API — *planned*
 - **Messaging:** Redis pub/sub — *planned*
 - **Ledger:** PostgreSQL — *planned*
+- **Observability:** Grafana / Prometheus — *planned*
 - **Deployment:** Docker Compose → AWS EC2 — *planned*
 
 ## Quick Start

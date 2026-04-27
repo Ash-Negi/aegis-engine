@@ -11,7 +11,7 @@ Four ETFs, each chosen to hedge a different failure mode:
 | QQQ | Invesco QQQ Trust | Equity risk premium / tech beta |
 | GLDM | SPDR Gold MiniShares | Inflation / monetary debasement hedge |
 | FBTC | Fidelity Wise Origin Bitcoin Fund | Stochastic noise / institutional capture hedge |
-| VT | Vanguard Total World Stock ETF | Global diversification |
+| VXUS | Vanguard Total International Stock ETF | Ex-US (developed + emerging) diversification |
 
 ## Phase 1 roadmap
 
@@ -20,6 +20,9 @@ Four ETFs, each chosen to hedge a different failure mode:
 - **Week 3+** — `math-engine/optimizer/`, `math-engine/signals/`.
 
 ## Sample landmines (Week 1 review, 2026-04-16)
+
+> **Historical note:** The findings below were measured with **VT** in the universe. As of 2026-04-27, VT was replaced by VXUS to reduce the QQQ overlap that drove finding (2). See `docs/adr/003-asset-universe-vxus.md`. Numbers in this section are preserved as the historical Week 1 record; Week 2 will produce a fresh baseline on the new universe.
+
 
 The current common period is **494 trading days** (2024-01-11 → 2025-12-30), bounded by FBTC inception. Three properties of this sample that *will* affect downstream work:
 
@@ -40,3 +43,11 @@ For data-correctness questions ("does this look right?") on this project, run ac
 ## Environment
 
 Use `/Users/level_up/Documents/QuantDev/aegis-engine/.venv/bin/python` for all Python/pytest commands. The venv has pytest, numpy, pandas, yfinance installed. `python3` on PATH is a bare Homebrew install without these.
+
+## Week 2 target (covariance estimation)
+Module: `math-engine/covariance/`
+- Sample covariance (baseline)
+- EWMA (λ=0.94, RiskMetrics standard)
+- Ledoit-Wolf shrinkage (primary estimator)
+- Log condition number before and after shrinkage
+- Eigendecomposition — how many real risk factors does the 4×4 matrix have?

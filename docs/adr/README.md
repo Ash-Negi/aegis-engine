@@ -61,3 +61,4 @@ What did we decide? State it directly. Include enough concreteness (file paths, 
 
 - [ADR-001](001-dataset-dataclass.md) — Bundle pipeline outputs into a single `Dataset` dataclass.
 - [ADR-002](002-test-contracts-not-calibration.md) — Pipeline tests validate contracts, not market calibration.
+- [ADR-003](003-asset-universe-vxus.md) — Replace VT with VXUS in the asset universe.

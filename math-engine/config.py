@@ -30,13 +30,13 @@ class Asset:
 #   QQQ  — captures equity risk premium and tech growth
 #   GLDM — hedges monetary debasement and inflation
 #   FBTC — hedges institutional/currency capture (high vol, financial repression)
-#   VT   — hedges single-country risk through global diversification
+#   VXUS — hedges US-concentration risk through ex-US (developed + emerging) equity
 
 UNIVERSE = [
     Asset("QQQ","Invesco QQQ Trust","Tech Beta","equity"),
     Asset("GLDM", "SPDR Gold MiniShares","Inflation Hedge","commodity"),
     Asset("FBTC", "Fidelity Wise Origin Bitcoin Fund","Financial Repression","crypto"),
-    Asset("VT", "Vanguard Total World Stock ETF","Global Macro", "equity")
+    Asset("VXUS", "Vanguard Total International Stock ETF","Ex-US Diversification", "equity")
 ]
 
 TICKERS = [asset.ticker for asset in UNIVERSE]
@@ -99,7 +99,7 @@ class PortfolioConfig:
         "QQQ":  0.30,
         "GLDM": 0.25,
         "FBTC": 0.15,
-        "VT":   0.30,
+        "VXUS": 0.30,
     })
 
     #Transaction costs(basis points, round_trip)

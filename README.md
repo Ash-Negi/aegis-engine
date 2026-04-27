@@ -28,7 +28,7 @@ Aegis operates on three layers:
 | QQQ | Invesco QQQ Trust | Tech Beta |
 | GLDM | SPDR Gold MiniShares | Inflation Hedge |
 | FBTC | Fidelity Wise Origin Bitcoin Fund | Stochastic Noise |
-| VT | Vanguard Total World Stock ETF | Global Macro |
+| VXUS | Vanguard Total International Stock ETF | Ex-US Diversification |
 
 ## Tech Stack
 

@@ -32,10 +32,6 @@ The current common period is **494 trading days** (2024-01-11 → 2025-12-30), b
 
 3. **All four assets had large positive returns in-sample** (GLDM +39%, FBTC +32%, QQQ +22%, VT +19%). Vanilla MVO using historical means as expected returns will produce a gold-heavy levered portfolio — classic in-sample overfit. Be explicit about expected-return shrinkage when building the optimizer.
 
-## Known issues
-
-- **`math-engine/main.py:118-121`** has a hardcoded paragraph claiming "FBTC is dangerous" because of fat tails. In the current sample, FBTC has the *lowest* excess kurtosis (+1.60) while VT has the highest (+16.63). The narrative either needs to be deleted or made data-driven from `stats`. (May not apply if `main.py` hasn't been migrated to this repo yet — check before fixing.)
-
 ## Working preferences
 
 For data-correctness questions ("does this look right?") on this project, run actual diagnostic code (load data, compute stats, cross-check across assets, identify outliers by date) rather than eyeballing printed output. This is foundational infrastructure — "looks plausible" is not a strong enough verdict, and small data bugs propagate to every downstream module.

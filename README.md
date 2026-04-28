@@ -32,9 +32,9 @@ This project is built to be auditable by design. Every nontrivial decision and m
 
 ## Roadmap
 
-A five-phase build. Each phase produces something working and demonstrable — no phase depends on completing all prior phases perfectly. Realistic timeline at part-time pace (~20–25 hours/week): roughly 6–8 months.
+A five-phase build. Each phase produces something working and demonstrable — no phase depends on completing all prior phases perfectly.
 
-### Phase 1 — Math Engine *(Weeks 1–4, in progress)*
+### Phase 1 — Math Engine *(in progress)*
 
 *Proves: the candidate can handle real financial data and translate textbook math (covariance estimation, Lagrange multipliers, efficient frontier) into production-quality code with proper testing and audit trails.*
 
@@ -43,7 +43,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 - [ ] **Week 3** — Mean-variance optimizer with expected-return shrinkage; efficient frontier construction; constrained optimization (long-only, sector caps)
 - [ ] **Week 4** — Backtest harness with transaction costs, slippage modeling, rebalancing bands, performance attribution
 
-### Phase 2 — Signal Development *(Weeks 5–10, planned)*
+### Phase 2 — Signal Development *(planned)*
 
 *Proves: the candidate understands that markets are non-stationary and can build adaptive systems instead of static optimizers. Distinguishes statistical arbitrage thinking from passive rebalancing.*
 
@@ -51,7 +51,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 - Adaptive weight engine that responds to regime classifications — risk-on tilts toward equity, risk-off tilts toward gold
 - Cointegration testing (Engle-Granger, Johansen) on asset pairs; spread-based rebalance signals when deviations exceed 2σ
 
-### Phase 3 — Execution Layer *(Weeks 11–16, planned)*
+### Phase 3 — Execution Layer *(planned)*
 
 *Proves: the candidate can build a polyglot async system with strong contracts between services, handle real-world execution complexity (partial fills, network failures, idempotency), and reason about audit and reconciliation.*
 
@@ -60,7 +60,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 - Alpaca paper trading integration with full order state machine (PENDING → SENT → PARTIAL_FILL → FILLED / REJECTED)
 - PostgreSQL audit ledger for every order, fill, and portfolio snapshot
 
-### Phase 4 — ML Integration *(Weeks 17–24, planned)*
+### Phase 4 — ML Integration *(planned)*
 
 *Proves: the candidate can apply ML to finance without falling into the in-sample overfitting trap. Demonstrates feature-engineering judgment and an honest take on ML's role (augmenting, not replacing, well-grounded baselines).*
 
@@ -69,7 +69,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 - Neural regime classifier (LSTM / Transformer) ensembled with the HMM baseline; walk-forward validation throughout
 - Local LLM (quantized Mistral / Llama) for structured signal extraction from macro reports — operational edge over per-token cloud inference
 
-### Phase 5 — Production Hardening *(Weeks 25–30, planned)*
+### Phase 5 — Production Hardening *(planned)*
 
 *Proves: the candidate thinks about what happens when the system runs unsupervised — failure modes, observability, safety rails. The difference between a project and a piece of infrastructure.*
 

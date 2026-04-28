@@ -36,7 +36,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 
 ### Phase 1 — Math Engine *(in progress)*
 
-*Proves: the candidate can handle real financial data and translate textbook math (covariance estimation, Lagrange multipliers, efficient frontier) into production-quality code with proper testing and audit trails.*
+*Proves: can handle real financial data and translate textbook math (covariance estimation, Lagrange multipliers, efficient frontier) into production-quality code with proper testing and audit trails.*
 
 - [x] **Week 1** — Data pipeline: fetch via yfinance, clean, log returns, descriptive statistics, correlations
 - [ ] **Week 2** — Covariance estimation: sample, EWMA (λ=0.94 RiskMetrics), Ledoit-Wolf shrinkage, condition number diagnostics, eigendecomposition
@@ -45,7 +45,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 
 ### Phase 2 — Signal Development *(planned)*
 
-*Proves: the candidate understands that markets are non-stationary and can build adaptive systems instead of static optimizers. Distinguishes statistical arbitrage thinking from passive rebalancing.*
+*Proves: understands that markets are non-stationary and can build adaptive systems instead of static optimizers. Distinguishes statistical arbitrage thinking from passive rebalancing.*
 
 - Hidden Markov Model regime detection (low-vol trending, high-vol mean-reverting, crisis)
 - Adaptive weight engine that responds to regime classifications — risk-on tilts toward equity, risk-off tilts toward gold
@@ -53,7 +53,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 
 ### Phase 3 — Execution Layer *(planned)*
 
-*Proves: the candidate can build a polyglot async system with strong contracts between services, handle real-world execution complexity (partial fills, network failures, idempotency), and reason about audit and reconciliation.*
+*Proves: can build a polyglot async system with strong contracts between services, handle real-world execution complexity (partial fills, network failures, idempotency), and reason about audit and reconciliation.*
 
 - Python math engine publishes target weight vectors to Redis (timestamp, confidence, regime, expected turnover)
 - Java 21 / Spring Boot execution engine with virtual-thread message handling
@@ -62,7 +62,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 
 ### Phase 4 — ML Integration *(planned)*
 
-*Proves: the candidate can apply ML to finance without falling into the in-sample overfitting trap. Demonstrates feature-engineering judgment and an honest take on ML's role (augmenting, not replacing, well-grounded baselines).*
+*Proves: can apply ML to finance without falling into the in-sample overfitting trap. Demonstrates feature-engineering judgment and an honest take on ML's role (augmenting, not replacing, well-grounded baselines).*
 
 - Macro feature engineering: VIX, yield-curve slope (10Y–2Y), DXY, oil, credit spreads
 - FinBERT sentiment pipeline on Fed minutes, FOMC statements, and financial news
@@ -71,7 +71,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 
 ### Phase 5 — Production Hardening *(planned)*
 
-*Proves: the candidate thinks about what happens when the system runs unsupervised — failure modes, observability, safety rails. The difference between a project and a piece of infrastructure.*
+*Proves: thinks about what happens when the system runs unsupervised — failure modes, observability, safety rails. The difference between a project and a piece of infrastructure.*
 
 - Docker Compose for the full stack: Python + Java + Redis + Postgres, one command
 - Health monitoring dashboard (Grafana / Prometheus): positions, P&L, regime, signal freshness
@@ -84,9 +84,9 @@ Four ETFs, each chosen to hedge a different failure mode. See [ADR-003](docs/adr
 
 | Ticker | Name | Role |
 |--------|------|------|
-| QQQ | Invesco QQQ Trust | Tech beta / equity risk premium |
-| GLDM | SPDR Gold MiniShares | Inflation / monetary debasement hedge |
-| FBTC | Fidelity Wise Origin Bitcoin Fund | Stochastic noise / institutional capture hedge |
+| QQQ | Invesco QQQ Trust | Tech beta / equity risk premium / US|
+| GLDM | SPDR Gold MiniShares | Inflation / monetary debasement hedge / Defensive |
+| FBTC | Fidelity Wise Origin Bitcoin Fund | financial repression hedge |
 | VXUS | Vanguard Total International Stock ETF | Ex-US (developed + emerging) diversification |
 
 ## Tech Stack

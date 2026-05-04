@@ -18,8 +18,8 @@ Aegis operates on three layers:
 ## What this project demonstrates
 
 - **Quantitative finance** — covariance estimation (sample, EWMA, Ledoit-Wolf shrinkage), mean-variance optimization, regime modeling with HMMs, transaction-cost-aware backtesting.
-- **Systems engineering** — distributed messaging over Redis pub/sub, audit ledgers in PostgreSQL, fault-tolerant execution, containerized deployment.
-- **Software craftsmanship** — Architecture Decision Records, change retrospectives, contract-based test invariants, type-safe configuration with no magic numbers.
+- **Software engineering** — distributed messaging over Redis pub/sub, audit ledgers in PostgreSQL, fault-tolerant execution, containerized deployment.
+- **Software Design and Testing** — Architecture Decision Records, change retrospectives, contract-based test invariants, type-safe configuration with no magic numbers.
 
 ## Engineering practices
 
@@ -38,10 +38,10 @@ A five-phase build. Each phase produces something working and demonstrable — n
 
 *Proves: can handle real financial data and translate textbook math (covariance estimation, Lagrange multipliers, efficient frontier) into production-quality code with proper testing and audit trails.*
 
-- [x] **Week 1** — Data pipeline: fetch via yfinance, clean, log returns, descriptive statistics, correlations
-- [ ] **Week 2** — Covariance estimation: sample, EWMA (λ=0.94 RiskMetrics), Ledoit-Wolf shrinkage, condition number diagnostics, eigendecomposition
-- [ ] **Week 3** — Mean-variance optimizer with expected-return shrinkage; efficient frontier construction; constrained optimization (long-only, sector caps)
-- [ ] **Week 4** — Backtest harness with transaction costs, slippage modeling, rebalancing bands, performance attribution
+- [x] — Data pipeline: fetch via yfinance, clean, log returns, descriptive statistics, correlations
+- [ ] — Covariance estimation: sample, EWMA (λ=0.94 RiskMetrics), Ledoit-Wolf shrinkage, condition number diagnostics, eigendecomposition
+- [ ] — Mean-variance optimizer with expected-return shrinkage; efficient frontier construction; constrained optimization (long-only, sector caps)
+- [ ] — Backtest harness with transaction costs, slippage modeling, rebalancing bands, performance attribution
 
 ### Phase 2 — Signal Development *(planned)*
 

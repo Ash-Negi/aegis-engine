@@ -179,6 +179,35 @@ class OptimizerConfig:
     trading_days_per_year: int = 252
 
 
+# ─── Signals Config (Phase 2) ─────────────────
+@dataclass
+class SignalsConfig:
+    """
+    Parameters for the Phase 2 adaptive layer: regime detection, regime-based
+    weight tilts, and cointegration signals.
+    """
+
+    # ── HMM regime detection ──
+    n_regimes: int = 3               # low-vol trending / high-vol mean-rev / crisis
+    hmm_random_state: int = 42       # EM is seed-sensitive; pin for reproducibility
+
+    # ── Regime tilts ──
+    # Multiplicative tilts applied to the base optimal weights by asset class,
+    # per regime. Risk-on (low-vol trending) leans into equity and crypto and
+    # trims gold; crisis does the opposite — gold up, equity/crypto down.
+    # Weights are renormalized to sum to 1 after tilting, so these are relative.
+    regime_tilts: dict = field(default_factory=lambda: {
+        "low_vol_trending": {"equity": 1.25, "commodity": 0.85, "crypto": 1.15},
+        "high_vol_meanrev": {"equity": 1.00, "commodity": 1.00, "crypto": 1.00},
+        "crisis":           {"equity": 0.60, "commodity": 1.50, "crypto": 0.50},
+    })
+
+    # ── Cointegration / spread signals ──
+    coint_significance: float = 0.05  # p-value / critical-level threshold
+    spread_entry_z: float = 2.0       # enter a spread trade beyond ±2σ
+    spread_exit_z: float = 0.5        # exit as the spread reverts toward the mean
+
+
 # ─── Portfolio Config ─────────────────────
 @dataclass
 class PortfolioConfig:

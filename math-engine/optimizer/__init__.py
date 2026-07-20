@@ -55,4 +55,19 @@ __all__ = [
     "efficient_frontier",
     "FrontierResult",
     "FrontierConstants",
+    "min_variance_portfolio",
+    "max_sharpe_portfolio",
+    "target_return_portfolio",
+    "efficient_frontier_constrained",
+    "ConstrainedFrontier",
+    "SECTOR_MAP",
 ]
+
+from optimizer.constrained import (
+    min_variance_portfolio,
+    max_sharpe_portfolio,
+    target_return_portfolio,
+    efficient_frontier_constrained,
+    ConstrainedFrontier,
+    SECTOR_MAP,
+)

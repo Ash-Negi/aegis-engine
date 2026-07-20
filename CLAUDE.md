@@ -23,7 +23,20 @@ Four ETFs, each chosen to hedge a different failure mode:
 ## Phase 2 roadmap
 
 - **Phase 2 (done)** — `math-engine/signals/`: from-scratch Gaussian HMM (Baum-Welch EM in log space, Viterbi), regime labeling by fitted volatility rank, regime-conditioned multiplicative weight tilts, cointegration (Engle-Granger + Johansen via statsmodels) with hysteresis spread signals. Demo `python -m signals.report`. Design in `docs/adr/006-hmm-from-scratch-stats-tests-delegated.md`.
-- **Phase 3** — execution layer: Python Redis publisher, Java 21 / Spring Boot consumer with an order state machine, Postgres audit ledger, docker-compose.
+
+## Phase 3 roadmap
+
+- **Phase 3 (done, broker stubbed)** — `math-engine/publisher/` + `execution-engine/`: signal contract, Redis publisher, Java 21 / Spring Boot consumer with an order state machine, Flyway-migrated Postgres ledger, docker-compose. Demo `python -m publisher.report` or `docker compose up --build`. Design in `docs/adr/007-publish-target-weights-not-orders.md`.
+- **Phase 4+** — ML feature engineering. Not started; user explicitly scoped work to stop before Phase 4.
+
+## Phase 3 conventions
+
+- **The wire carries target weights, not orders.** Desired state is idempotent; imperative commands are not. Every recovery path (startup replay from `aegis:signals:latest`, signal-id dedupe, the no-trade band) depends on that. Don't add order-level fields to the signal contract.
+- **`contract.py` and `TargetWeightSignal.java` are one contract in two files.** Changing either means changing both and bumping `schema_version`. The Java test fixture in `TargetWeightSignalTest` is a *verbatim* copy of real Python output — regenerate it with `python -m publisher.report`, never hand-edit it.
+- **Money and share counts are `BigDecimal`/`NUMERIC`, never `double`.** Accumulating fills as doubles leaves an order a few ulps short of target so it never reaches FILLED.
+- **Only `OrderStateMachine` may mutate an `Order`** — every setter is package-private so all transitions go through the legality check.
+- **Java tests run on H2 in PostgreSQL mode with the real Flyway migration.** Use standard SQL spellings (`TIMESTAMP WITH TIME ZONE`, not `TIMESTAMPTZ`) so the migration stays portable across both.
+- Docker was not available in the dev environment, so `docker compose up` has **not** been executed end-to-end. The Dockerfiles and compose file are written but unverified; the Python↔Java seam is covered by the contract test instead.
 
 ## Phase 2 findings
 
@@ -52,4 +65,6 @@ For data-correctness questions ("does this look right?") on this project, run ac
 
 ## Environment
 
-Use `/Users/level_up/Documents/QuantDev/aegis-engine/.venv/bin/python` for all Python/pytest commands. The venv has pytest, numpy, pandas, scipy, statsmodels, yfinance, matplotlib installed. `python3` on PATH is a bare Homebrew install without these.
+Use `/Users/level_up/Documents/QuantDev/aegis-engine/.venv/bin/python` for all Python/pytest commands. The venv has pytest, numpy, pandas, scipy, statsmodels, yfinance, matplotlib, redis, fakeredis installed. `python3` on PATH is a bare Homebrew install without these.
+
+For the Java execution engine, use `mvn test` from `execution-engine/`. JDK 25 is installed; the project targets Java 21. Maven's first run needs network access to resolve dependencies.

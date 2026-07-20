@@ -6,6 +6,7 @@ Every tunable parameter lives here. No magic numbers buried in logic.
 Design Principle: if you need to change a number to test a hypothesis, you should only need to change it in one place.
 """
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -206,6 +207,49 @@ class SignalsConfig:
     coint_significance: float = 0.05  # p-value / critical-level threshold
     spread_entry_z: float = 2.0       # enter a spread trade beyond ±2σ
     spread_exit_z: float = 0.5        # exit as the spread reverts toward the mean
+
+
+# ─── Execution Config (Phase 3) ───────────────
+@dataclass
+class ExecutionConfig:
+    """
+    Parameters for the Phase 3 execution layer — the Python→Redis→Java hop.
+
+    The math engine publishes TARGET WEIGHTS, not orders. Everything here
+    concerns how that target is transmitted and how stale it is allowed to
+    get; how it becomes orders is the execution engine's business.
+    """
+
+    # ── Redis transport ──
+    # Read from the environment so a container can be pointed at the compose
+    # service name without editing code. Defaults are the local-dev values.
+    redis_host: str = field(
+        default_factory=lambda: os.environ.get("AEGIS_REDIS_HOST", "localhost"))
+    redis_port: int = field(
+        default_factory=lambda: int(os.environ.get("AEGIS_REDIS_PORT", "6379")))
+    redis_db: int = 0
+
+    # The channel carries the live stream; the key holds the last-known-good
+    # signal so a consumer that starts late (or restarts) can recover state
+    # without waiting for the next publish. Pub/sub alone has no replay.
+    signal_channel: str = "aegis:signals"
+    signal_latest_key: str = "aegis:signals:latest"
+
+    # ── Signal contract ──
+    # Bumped whenever the payload shape changes in a way that would break a
+    # consumer. The Java side rejects a version it does not recognise rather
+    # than silently mis-parsing.
+    schema_version: int = 1
+
+    # How long a published signal remains actionable. Past this, the
+    # execution engine must treat the signal as stale and refuse to trade on
+    # it — the Phase 5 staleness circuit breaker reads the same field.
+    signal_ttl_seconds: int = 86_400        # 24h
+
+    # Weights below this are published as exactly zero. Floating-point dust
+    # from the optimizer (1e-17 in FBTC) would otherwise generate orders for
+    # a fraction of a share.
+    weight_epsilon: float = 1e-6
 
 
 # ─── Portfolio Config ─────────────────────

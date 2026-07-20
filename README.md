@@ -39,7 +39,7 @@ This project is built to be auditable by design. Every nontrivial decision and m
 
 - **[Architecture Decision Records](docs/adr/)** — every nontrivial design choice documented with the alternatives considered and tradeoffs accepted. See [ADR-003](docs/adr/003-asset-universe-vxus.md) for an example.
 - **[Change retrospectives](docs/retros/)** — debriefs after meaningful changes record what was expected, what actually happened, and what carries forward. See [Retro-001](docs/retros/001-vxus-swap.md) for an example.
-- **Contract-based tests** — 20 invariants protecting downstream modules (column order, index alignment, FBTC pre-inception NaN handling, mathematical identities between return calculations). See [ADR-002](docs/adr/002-test-contracts-not-calibration.md) for the testing philosophy.
+- **Contract-based tests** — 180 invariants across Python and Java protecting downstream modules and service boundaries: column order and index alignment, FBTC pre-inception NaN handling, EM log-likelihood monotonicity, order state-machine transitions, cross-language wire-format compatibility. See [ADR-002](docs/adr/002-test-contracts-not-calibration.md) for the testing philosophy.
 - **Single source of truth** — every tunable parameter (decay factors, lookback windows, transaction costs, asset universe) lives in `math-engine/config.py`. No magic numbers buried in module logic.
 
 ## Roadmap
@@ -65,14 +65,18 @@ A five-phase build. Each phase produces something working and demonstrable — n
 
 Two findings worth stating plainly. The HMM, given no event calendar, assigned its crisis state to exactly three episodes — the August 2024 yen carry-trade unwind, the April 2025 tariff shock, and January 2026 — recovering known market stress from the return series alone. And the cointegration layer returns an honest negative: **no pair is cointegrated** here (Johansen rank r=0), which is the correct result for a universe deliberately built so each asset hedges a different failure mode. See [ADR-006](docs/adr/006-hmm-from-scratch-stats-tests-delegated.md) for the build-vs-borrow reasoning.
 
-### Phase 3 — Execution Layer *(planned)*
+### Phase 3 — Execution Layer *(complete, broker stubbed)*
 
 *Proves: can build a polyglot async system with strong contracts between services, handle real-world execution complexity (partial fills, network failures, idempotency), and reason about audit and reconciliation.*
 
-- Python math engine publishes target weight vectors to Redis (timestamp, confidence, regime, expected turnover)
-- Java 21 / Spring Boot execution engine with virtual-thread message handling
-- Alpaca paper trading integration with full order state machine (PENDING → SENT → PARTIAL_FILL → FILLED / REJECTED)
-- PostgreSQL audit ledger for every order, fill, and portfolio snapshot
+- [x] — Python math engine publishes target weight vectors to Redis (timestamp, confidence, regime, expected turnover)
+- [x] — Java 21 / Spring Boot execution engine with virtual-thread message handling
+- [x] — Full order state machine (PENDING → SENT → PARTIALLY_FILLED → FILLED / REJECTED / CANCELLED) with legal transitions declared, not implied
+- [x] — PostgreSQL audit ledger (Flyway-migrated) for every signal, order, and fill
+- [x] — Docker Compose for the full stack: Redis + Postgres + Java + Python
+- [ ] — Alpaca paper trading. `BrokerClient` is the interface and `MockBrokerClient` the implementation; credentials, rate limiting, and live-account reconciliation are deferred to Phase 5.
+
+The load-bearing decision is that the wire carries target **weights**, not orders — desired state rather than imperative commands. Re-applying "target 19% QQQ" is a no-op; re-applying "buy 43 shares" doubles the position. Every recovery path in the system depends on that difference. See [ADR-007](docs/adr/007-publish-target-weights-not-orders.md).
 
 ### Phase 4 — ML Integration *(planned)*
 
@@ -87,7 +91,7 @@ Two findings worth stating plainly. The HMM, given no event calendar, assigned i
 
 *Proves: thinks about what happens when the system runs unsupervised — failure modes, observability, safety rails. The difference between a project and a piece of infrastructure.*
 
-- Docker Compose for the full stack: Python + Java + Redis + Postgres, one command
+- Alpaca paper trading against the `BrokerClient` interface: credentials, rate limiting, reconciliation against a live account
 - Health monitoring dashboard (Grafana / Prometheus): positions, P&L, regime, signal freshness
 - Circuit breakers: max-drawdown halt, signal-staleness halt, position-concentration halt
 - AWS EC2 deployment of the full stack
@@ -106,14 +110,17 @@ Four ETFs, each chosen to hedge a different failure mode. See [ADR-003](docs/adr
 ## Tech Stack
 
 - **Math Engine:** Python 3.12+ (NumPy, SciPy, Pandas, statsmodels, yfinance)
+- **Execution Engine:** Java 21 (Spring Boot 3.3, Virtual Threads, JPA/Hibernate, Flyway)
+- **Messaging:** Redis pub/sub + durable last-known-good key
+- **Ledger:** PostgreSQL
+- **Broker:** Alpaca API — *stubbed behind `BrokerClient`*
 - **ML / NLP:** FinBERT, quantized local LLMs (Mistral / Llama) — *planned*
-- **Execution Engine:** Java 21+ (Spring Boot, Virtual Threads), Alpaca API — *planned*
-- **Messaging:** Redis pub/sub — *planned*
-- **Ledger:** PostgreSQL — *planned*
 - **Observability:** Grafana / Prometheus — *planned*
-- **Deployment:** Docker Compose → AWS EC2 — *planned*
+- **Deployment:** Docker Compose → AWS EC2 — *compose done, EC2 planned*
 
 ## Quick Start
+
+The math engine runs standalone — no Redis, no Postgres, no Docker:
 
 ```bash
 cd math-engine
@@ -123,14 +130,32 @@ python -m covariance.report     # covariance estimators + conditioning
 python -m optimizer.report      # efficient frontier + optimal weights
 python -m backtest.report       # backtest with costs + attribution
 python -m signals.report        # regimes, adaptive tilts, cointegration
+python -m publisher.report      # generate a signal (add --publish for Redis)
 ```
+
+The full stack — Redis, Postgres, the Java execution engine, and a one-shot
+publisher — comes up with one command:
+
+```bash
+docker compose up --build
+```
+
+The publisher runs the whole math stack, publishes one signal, and exits; the
+execution engine consumes it, plans orders against the no-trade band, and
+writes signal, orders, and fills to the Postgres ledger.
 
 ## Running Tests
 
 ```bash
-cd math-engine
-pytest tests/ -v
+cd math-engine && pytest tests/ -v        # 133 tests
+cd execution-engine && mvn test           # 47 tests
 ```
+
+The Java suite runs against H2 in PostgreSQL mode with the real Flyway
+migration applied, so a broken migration fails the build rather than
+production. The cross-language contract test parses a payload copied verbatim
+from a real Python run — a hand-written fixture would only prove the consumer
+can parse what its author imagined.
 
 ## Repository Layout
 
@@ -160,7 +185,22 @@ aegis-engine/
 │   │   ├── adaptive.py          # Regime-conditioned weight tilts
 │   │   ├── cointegration.py     # Engle-Granger, Johansen, spread signals
 │   │   └── report.py            # Demo (python -m signals.report)
-│   └── tests/               # Contract-based test suite (120 tests)
+│   ├── publisher/           # Phase 3: the math engine's outbound edge
+│   │   ├── contract.py          # TargetWeightSignal — the Python↔Java format
+│   │   ├── pipeline.py          # prices → optimizer → regime tilt → signal
+│   │   ├── redis_publisher.py   # PUBLISH + durable SET
+│   │   └── report.py            # Demo (python -m publisher.report)
+│   └── tests/               # Contract-based test suite (133 tests)
+├── execution-engine/        # Phase 3: Java 21 / Spring Boot
+│   └── src/main/java/com/aegis/execution/
+│       ├── signal/              # Redis subscriber + wire contract + validation
+│       ├── rebalance/           # Target weights → orders, with no-trade band
+│       ├── order/               # Order/Fill entities + the state machine
+│       ├── broker/              # BrokerClient interface + MockBrokerClient
+│       ├── portfolio/           # Positions, cash, equity
+│       ├── ledger/              # Signal audit records
+│       └── execution/           # Orchestration: record → validate → trade
+├── docker-compose.yml       # Redis + Postgres + Java + Python, one command
 └── docs/
     ├── adr/                 # Architecture Decision Records
     ├── retros/              # Change retrospectives

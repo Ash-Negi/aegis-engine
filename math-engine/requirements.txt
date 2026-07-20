@@ -15,3 +15,6 @@ matplotlib>=3.8.0
 
 # Testing
 pytest>=8.0.0
+# Execution layer (Phase 3)
+redis>=5.0.0
+fakeredis>=2.21.0

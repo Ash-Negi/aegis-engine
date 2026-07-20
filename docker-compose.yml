@@ -1,0 +1,79 @@
+# Aegis Engine — full stack
+#
+#   docker compose up --build
+#
+# Brings up Redis, Postgres, the Java execution engine, and a one-shot Python
+# publisher. The publisher runs the whole math stack (Phase 1 optimizer →
+# Phase 2 regime tilt), publishes one signal, and exits; the execution engine
+# consumes it and writes the resulting orders to the ledger.
+#
+# Startup order matters here and is enforced with health checks rather than
+# sleeps. The execution engine waits for Postgres because Flyway must migrate
+# before Hibernate validates the entities against the schema. The publisher
+# waits for the execution engine so that its PUBLISH lands on a live
+# subscriber — though the durable `aegis:signals:latest` key means the signal
+# would still be picked up on the next startup even if the ordering slipped.
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: aegis
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: aegis
+    ports:
+      - "5432:5432"
+    volumes:
+      - aegis-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis -d aegis"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  execution-engine:
+    build:
+      context: ./execution-engine
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/aegis
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: aegis
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: generates a signal from live market data and publishes it.
+  # Not a long-running service — in production this would be a scheduled job.
+  signal-publisher:
+    build:
+      context: ./math-engine
+    environment:
+      AEGIS_REDIS_HOST: redis
+    depends_on:
+      execution-engine:
+        condition: service_healthy
+    command: ["python", "-m", "publisher.report", "--publish"]
+
+volumes:
+  aegis-pgdata:

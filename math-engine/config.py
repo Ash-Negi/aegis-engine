@@ -83,6 +83,54 @@ class DataConfig:
     risk_free_rate: float = 0.05
 
 
+# ─── Covariance Estimation Config ─────────────
+@dataclass
+class CovarianceConfig:
+    """
+    Parameters for the Week 2 covariance-estimation layer.
+
+    The covariance matrix Σ is the single most important input to
+    mean-variance optimization: the optimizer inverts it, so any
+    instability in Σ is amplified directly into the weights. Every knob
+    that changes how Σ is estimated lives here, one source of truth.
+    """
+
+    # Return basis. The whole engine models log returns (see DataConfig),
+    # so covariance is estimated on log returns too. Kept explicit so a
+    # future experiment can switch to simple returns in exactly one place.
+    use_log_returns: bool = True
+
+    # ── Sample covariance ──
+    # Bessel's correction: divide by (T-1) instead of T so the estimator
+    # is unbiased for the population covariance. This is the textbook
+    # baseline and matches np.cov / pandas .cov() defaults.
+    sample_ddof: int = 1
+
+    # ── EWMA (RiskMetrics) ──
+    # λ = 0.94 is J.P. Morgan RiskMetrics' daily standard. It sets the
+    # memory of the estimator: the weight on an observation i days old is
+    # ∝ λ^i, a half-life of ln(0.5)/ln(0.94) ≈ 11.2 trading days.
+    ewma_lambda: float = 0.94
+    # RiskMetrics assumes a zero daily mean and does NOT demean returns
+    # before forming the second moment. We follow that convention so the
+    # λ=0.94 calibration is used as intended; flip to True for research.
+    ewma_demean: bool = False
+
+    # ── Annualization ──
+    # Daily covariance scales linearly with horizon under i.i.d.:
+    # Σ_annual = 252 · Σ_daily. Because this is a scalar multiple it leaves
+    # the CONDITION NUMBER and correlation structure unchanged, so every
+    # conditioning diagnostic is identical daily vs. annualized — the
+    # factor is purely for human-readable volatilities.
+    trading_days_per_year: int = 252
+
+    # ── Diagnostics ──
+    # An eigenvalue counts as a "real" risk factor when it explains at
+    # least this share of total variance. With four assets, factors below
+    # a few percent are noise the optimizer should not chase.
+    factor_variance_threshold: float = 0.05
+
+
 # ─── Portfolio Config ─────────────────────
 @dataclass
 class PortfolioConfig:

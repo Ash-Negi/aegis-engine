@@ -21,6 +21,22 @@ A running record of test changes, newest on top. Keep entries terse: name
 the test, say WHAT invariant it protects, and WHY a bug there would be easy
 to miss.
 
+2026-07-20 — Week 2, EWMA (RiskMetrics)
+
+  test_ewma_hand_computed
+      T=2, λ=0.5 fixture where the normalized weights are exactly
+      [1/3, 2/3]. Pins BOTH the geometric weighting and the
+      newest-gets-most-weight orientation — a reversed weight vector would
+      still be symmetric/PSD and pass every structural test, so this is the
+      one that catches an off-by-one or flipped-order bug.
+  test_ewma_limit_lambda_to_one_is_biased_sample
+      As λ→1 the weights become uniform, so EWMA(demean) must collapse to
+      the 1/T (ddof=0) sample covariance. Ties the exotic estimator back to
+      a known quantity at its boundary.
+  test_ewma_symmetric / _psd / _preserves_order / _annualize / _rejects_bad_lambda
+      Same structural contract as the sample estimator, re-checked because
+      EWMA builds Σ by a completely different path (weighted outer products).
+
 2026-07-20 — Week 2, sample covariance
 
   test_matches_pandas_cov
@@ -57,7 +73,7 @@ import pytest
 
 from config import CovarianceConfig, DataConfig, TICKERS
 from data.pipeline import DataPipeline
-from covariance import sample_covariance
+from covariance import sample_covariance, ewma_covariance
 
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -158,3 +174,63 @@ class TestSampleCovariance:
     def test_rejects_non_dataframe(self):
         with pytest.raises(TypeError):
             sample_covariance(np.array([[0.1, 0.2], [0.3, 0.4]]))
+
+
+# ─── EWMA (RiskMetrics) ───────────────────────────────────────────────────────
+
+class TestEWMACovariance:
+    """Verify the exponentially-weighted estimator."""
+
+    def test_ewma_hand_computed(self):
+        """
+        T=2, λ=0.5, no demean. Weights: raw = 0.5·[0.5, 1] = [0.25, 0.5],
+        normalized = [1/3, 2/3]. Σ = (1/3)x₀x₀ᵀ + (2/3)x₁x₁ᵀ.
+        """
+        df = pd.DataFrame({"A": [0.02, -0.04], "B": [0.01, 0.03]})
+        config = CovarianceConfig(ewma_lambda=0.5, ewma_demean=False)
+        cov = ewma_covariance(df, config)
+
+        w = np.array([1 / 3, 2 / 3])
+        a = df["A"].to_numpy()
+        b = df["B"].to_numpy()
+        exp_aa = np.sum(w * a * a)
+        exp_bb = np.sum(w * b * b)
+        exp_ab = np.sum(w * a * b)
+
+        np.testing.assert_allclose(cov.loc["A", "A"], exp_aa, rtol=1e-12)
+        np.testing.assert_allclose(cov.loc["B", "B"], exp_bb, rtol=1e-12)
+        np.testing.assert_allclose(cov.loc["A", "B"], exp_ab, rtol=1e-12)
+        # Sanity on the concrete numbers: ΣAA = 0.0012 exactly.
+        np.testing.assert_allclose(cov.loc["A", "A"], 0.0012, rtol=1e-12)
+
+    def test_ewma_limit_lambda_to_one_is_biased_sample(self, log_returns):
+        """As λ→1 the weights go uniform ⇒ EWMA(demean) → 1/T sample cov."""
+        config = CovarianceConfig(ewma_lambda=1 - 1e-8, ewma_demean=True)
+        cov = ewma_covariance(log_returns, config).to_numpy()
+        biased_sample = np.cov(log_returns.to_numpy(), rowvar=False, ddof=0)
+        np.testing.assert_allclose(cov, biased_sample, rtol=1e-4)
+
+    def test_ewma_symmetric(self, log_returns):
+        cov = ewma_covariance(log_returns).to_numpy()
+        np.testing.assert_allclose(cov, cov.T, atol=1e-18)
+
+    def test_ewma_psd(self, log_returns):
+        """A convex combination of outer products x·xᵀ is always PSD."""
+        cov = ewma_covariance(log_returns).to_numpy()
+        assert np.linalg.eigvalsh(cov).min() > -1e-12
+
+    def test_ewma_preserves_order(self, log_returns):
+        cov = ewma_covariance(log_returns)
+        assert list(cov.index) == list(TICKERS)
+        assert list(cov.columns) == list(TICKERS)
+
+    def test_ewma_annualize_scales(self, log_returns):
+        config = CovarianceConfig()
+        daily = ewma_covariance(log_returns, config).to_numpy()
+        annual = ewma_covariance(log_returns, config, annualize=True).to_numpy()
+        np.testing.assert_allclose(annual, daily * config.trading_days_per_year, rtol=1e-12)
+
+    def test_ewma_rejects_bad_lambda(self, log_returns):
+        for bad in (0.0, 1.0, 1.5, -0.1):
+            with pytest.raises(ValueError, match="ewma_lambda"):
+                ewma_covariance(log_returns, CovarianceConfig(ewma_lambda=bad))

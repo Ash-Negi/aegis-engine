@@ -131,3 +131,78 @@ def sample_covariance(
         cov = cov * config.trading_days_per_year
 
     return _as_frame(cov, columns)
+
+
+# ─── EWMA (RiskMetrics) covariance ────────────────────────────────────────────
+
+def ewma_covariance(
+    returns: pd.DataFrame,
+    config: CovarianceConfig | None = None,
+    annualize: bool = False,
+) -> pd.DataFrame:
+    r"""
+    Exponentially-weighted moving-average covariance (J.P. Morgan RiskMetrics).
+
+        Σ = Σ_t  w_t · x_t x_tᵀ ,     w_t ∝ λ^{(T-1) - t} ,   Σ_t w_t = 1
+
+    where t indexes observations oldest→newest, so the most recent day
+    carries the largest weight and influence decays geometrically into the
+    past. λ = 0.94 (the RiskMetrics daily default) gives a half-life of
+    ln(0.5)/ln(0.94) ≈ 11.2 trading days: roughly, only the last ~two weeks
+    dominate the estimate.
+
+    Why this exists alongside the sample estimator:
+        The sample covariance weights every day in the window equally — a
+        return from 18 months ago counts as much as yesterday's. Markets
+        are non-stationary (volatility clusters), so equal weighting blends
+        calm and turbulent regimes into one blurred average. EWMA fixes
+        that by *forgetting*: it tracks the current regime's covariance
+        rather than the whole sample's. The cost is a shorter effective
+        sample (≈ 1/(1-λ) ≈ 17 days of "real" information), which makes the
+        estimate noisier — a different trade-off than Ledoit-Wolf's.
+
+    Mean handling:
+        RiskMetrics assumes a zero daily mean and forms the second moment
+        E[x xᵀ] directly, WITHOUT demeaning (config.ewma_demean=False). At
+        daily frequency the mean is tiny relative to the volatility, and
+        the λ=0.94 calibration was derived under that assumption, so we
+        follow it by default. Set ewma_demean=True to subtract the sample
+        mean first (a genuine weighted covariance) for research.
+
+    Args:
+        returns:   clean returns frame (rows = dates, cols = tickers).
+        config:    CovarianceConfig; reads ewma_lambda, ewma_demean, and
+                   (if annualizing) trading_days_per_year.
+        annualize: multiply by trading_days_per_year. Scalar multiple, so
+                   it leaves conditioning and correlations unchanged.
+
+    Returns:
+        Labelled (N × N) covariance DataFrame, symmetric and PSD (a convex
+        combination of rank-1 outer products x_t x_tᵀ is always PSD).
+    """
+    config = config or CovarianceConfig()
+    lam = config.ewma_lambda
+    if not 0.0 < lam < 1.0:
+        raise ValueError(f"ewma_lambda must be in (0, 1), got {lam}")
+
+    X, columns = _prepare(returns)
+    T = X.shape[0]
+
+    if config.ewma_demean:
+        X = X - X.mean(axis=0, keepdims=True)
+
+    # Weight for observation t (0 = oldest, T-1 = newest) is proportional to
+    # λ^{(T-1)-t}: the newest row gets λ^0 = 1, each step back multiplies by
+    # λ. Normalizing by the sum makes the weights a proper probability
+    # distribution even though the geometric series is truncated at T terms.
+    exponents = np.arange(T - 1, -1, -1)
+    weights = (1.0 - lam) * lam**exponents
+    weights /= weights.sum()
+
+    # Σ = Xᵀ diag(w) X  accumulates the weighted outer products x_t x_tᵀ.
+    cov = X.T @ (weights[:, None] * X)
+
+    if annualize:
+        cov = cov * config.trading_days_per_year
+
+    return _as_frame(cov, columns)

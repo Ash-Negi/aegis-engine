@@ -266,3 +266,68 @@ honest conclusion on 573 days of data, not a bug.
 - V. Chopra and W. Ziemba (1993). *The Effect of Errors in Means,
   Variances, and Covariances on Optimal Portfolio Choice.* Journal of
   Portfolio Management 19(2).
+
+---
+
+## Phase 1 · Week 4 — Backtesting with frictions
+
+### Why frictions are the whole point
+
+A frictionless backtest flatters every strategy: it rebalances for free and
+reports a Sharpe no live account will see. Week 4 makes the three frictions
+that actually erode a rebalancing strategy explicit and measurable.
+
+**Weight-space simulation.** The engine runs in weight space, not shares.
+Each day the held weights drift with returns,
+
+$$w_{t,i}^{\text{end}} = \frac{w_{t,i}(1+r_{t,i})}{1 + w_t^\top r_t},$$
+
+which automatically stays fully invested (the denominator renormalises).
+Gross portfolio return on day t is simply `wₜᵀrₜ`.
+
+**Band rebalancing (the no-trade region).** Rebalancing back to target fires
+only when some asset has drifted more than the band from its target:
+`maxᵢ |wₜ,ᵢᵉⁿᵈ − targetᵢ| > band`. Trade every day and costs eat you; never
+trade and the book drifts off target. The band is the standard compromise —
+here ±5 percentage points (absolute), which produced just **2 rebalances in
+573 days**. (Absolute points, not % of target, so a 0-weight asset does not
+get a zero-width — always-tripping — band.)
+
+**Costs.** On a rebalance the cost charged is
+`(one-way turnover) × total_cost_bps`, where one-way turnover
+`= ½·Σ|w_new − w_old|` is the fraction of the book actually traded, and
+`total_cost_bps = transaction_cost_bps + slippage_bps` (15 bps here).
+
+### Metrics and attribution
+
+Standard risk/return summary: total return, CAGR, annualised return/vol,
+Sharpe, **max drawdown computed from the equity path** (a drawdown is
+path-dependent — it cannot be read off mean and variance), Calmar, win rate.
+
+Attribution is done in **arithmetic** space because only arithmetic
+contributions are additive: asset i's daily contribution `wₜ,ᵢ·rₜ,ᵢ` sums,
+over assets, to that day's gross return, so the per-asset totals partition
+the gross return exactly. Cost drag is subtracted as its own explicit line.
+
+### Week 4 empirical result
+
+Long-only max-Sharpe portfolio, ±5% bands, 15 bps costs, over 573 days:
+
+| Strategy | CAGR | Vol | Sharpe | Max DD | Calmar |
+|----------|----:|----:|----:|----:|----:|
+| Optimized (banded) | 30.4% | 14.4% | **1.56** | −12.2% | 2.50 |
+| Equal-weight (banded) | 31.9% | 19.4% | 1.26 | −14.6% | 2.18 |
+| Optimized (buy & hold) | 30.6% | 15.0% | 1.53 | −13.3% | 2.30 |
+
+The honest read: the optimizer earned slightly *less* than naive
+equal-weight (30.4% vs 31.9%) but at meaningfully lower risk — higher
+Sharpe (1.56 vs 1.26), shallower drawdown, lower vol. Its value is
+risk reduction, not return maximisation, which is exactly what mean-variance
+optimization promises and all it should be credited with. Cost drag was
+negligible (0.02%) because the band kept turnover to 10% over two years —
+demonstrating the no-trade region doing its job.
+
+### References (Week 4)
+
+- R. Grinold and R. Kahn (1999). *Active Portfolio Management*, 2nd ed.
+  (transaction-cost-aware implementation).

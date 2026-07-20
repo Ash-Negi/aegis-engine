@@ -11,6 +11,9 @@ A distributed quantitative execution system for multi-asset portfolio management
 ![Phase 1 Week 3 — Mean-Variance Optimization](docs/images/phase1_week3_frontier.png)
 *Week 3: the efficient frontier (unconstrained + long-only) with the capital market line, key-portfolio weights, Bayes-Stein shrinkage of the mean vector, and the long-only frontier's changing composition. Shrinkage turns a 69%-gold overfit into a diversified portfolio.*
 
+![Phase 1 Week 4 — Backtest](docs/images/phase1_week4_backtest.png)
+*Week 4: net-of-cost equity curves (optimized vs equal-weight vs buy-and-hold), drawdown, weight drift under ±5% rebalancing bands, and per-asset return attribution with cost drag. The optimizer earns less than equal-weight but at a higher Sharpe (1.56 vs 1.26) and shallower drawdown.*
+
 ## Architecture
 
 Aegis operates on three layers:
@@ -47,7 +50,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 - [x] — Data pipeline: fetch via yfinance, clean, log returns, descriptive statistics, correlations
 - [x] — Covariance estimation: sample, EWMA (λ=0.94 RiskMetrics), Ledoit-Wolf shrinkage, condition number diagnostics, eigendecomposition
 - [x] — Mean-variance optimizer with expected-return shrinkage; efficient frontier construction; constrained optimization (long-only, sector caps)
-- [ ] — Backtest harness with transaction costs, slippage modeling, rebalancing bands, performance attribution
+- [x] — Backtest harness with transaction costs, slippage modeling, rebalancing bands, performance attribution
 
 ### Phase 2 — Signal Development *(planned)*
 
@@ -113,6 +116,7 @@ pip install -r requirements.txt
 python main.py                  # Week 1 — data pipeline overview
 python -m covariance.report     # Week 2 — covariance estimators + conditioning
 python -m optimizer.report      # Week 3 — efficient frontier + optimal weights
+python -m backtest.report       # Week 4 — backtest with costs + attribution
 ```
 
 ## Running Tests
@@ -139,6 +143,11 @@ aegis-engine/
 │   │   ├── mean_variance.py     # Closed-form GMV / tangency / frontier
 │   │   ├── constrained.py       # Long-only + sector caps (SLSQP)
 │   │   └── report.py            # Week 3 demo (python -m optimizer.report)
+│   ├── backtest/            # Week 4: friction-aware backtest harness
+│   │   ├── engine.py            # Band-rebalancing simulation with costs
+│   │   ├── metrics.py           # CAGR, Sharpe, drawdown, Calmar
+│   │   ├── attribution.py       # Per-asset contribution + cost drag
+│   │   └── report.py            # Week 4 demo (python -m backtest.report)
 │   └── tests/               # Contract-based test suite
 └── docs/
     ├── adr/                 # Architecture Decision Records

@@ -8,6 +8,9 @@ A distributed quantitative execution system for multi-asset portfolio management
 ![Phase 1 Week 2 — Covariance Estimation](docs/images/phase1_week2_covariance.png)
 *Week 2: correlation structure, the risk-factor spectrum (one factor carries 73% of variance), condition number across the three estimators, and Ledoit-Wolf shrinkage pulling eigenvalues toward the target μ.*
 
+![Phase 1 Week 3 — Mean-Variance Optimization](docs/images/phase1_week3_frontier.png)
+*Week 3: the efficient frontier (unconstrained + long-only) with the capital market line, key-portfolio weights, Bayes-Stein shrinkage of the mean vector, and the long-only frontier's changing composition. Shrinkage turns a 69%-gold overfit into a diversified portfolio.*
+
 ## Architecture
 
 Aegis operates on three layers:
@@ -43,7 +46,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 
 - [x] — Data pipeline: fetch via yfinance, clean, log returns, descriptive statistics, correlations
 - [x] — Covariance estimation: sample, EWMA (λ=0.94 RiskMetrics), Ledoit-Wolf shrinkage, condition number diagnostics, eigendecomposition
-- [ ] — Mean-variance optimizer with expected-return shrinkage; efficient frontier construction; constrained optimization (long-only, sector caps)
+- [x] — Mean-variance optimizer with expected-return shrinkage; efficient frontier construction; constrained optimization (long-only, sector caps)
 - [ ] — Backtest harness with transaction costs, slippage modeling, rebalancing bands, performance attribution
 
 ### Phase 2 — Signal Development *(planned)*
@@ -109,6 +112,7 @@ cd math-engine
 pip install -r requirements.txt
 python main.py                  # Week 1 — data pipeline overview
 python -m covariance.report     # Week 2 — covariance estimators + conditioning
+python -m optimizer.report      # Week 3 — efficient frontier + optimal weights
 ```
 
 ## Running Tests
@@ -130,6 +134,11 @@ aegis-engine/
 │   │   ├── estimators.py    # The three covariance estimators
 │   │   ├── diagnostics.py   # Condition number, eigendecomposition
 │   │   └── report.py        # Week 2 demo (python -m covariance.report)
+│   ├── optimizer/           # Week 3: mean-variance optimization
+│   │   ├── expected_returns.py  # μ estimation + Bayes-Stein shrinkage
+│   │   ├── mean_variance.py     # Closed-form GMV / tangency / frontier
+│   │   ├── constrained.py       # Long-only + sector caps (SLSQP)
+│   │   └── report.py            # Week 3 demo (python -m optimizer.report)
 │   └── tests/               # Contract-based test suite
 └── docs/
     ├── adr/                 # Architecture Decision Records

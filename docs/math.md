@@ -177,3 +177,92 @@ Common period **2024-01-12 → 2026-04-27**, T = 573 days, N = 4.
   88(2), 365–411.
 - J.P. Morgan/Reuters (1996). *RiskMetrics — Technical Document*, 4th ed.
   (source of the λ = 0.94 daily decay convention).
+
+---
+
+## Phase 1 · Week 3 — Mean-variance optimization
+
+### The problem and its two fragile inputs
+
+Markowitz mean-variance optimization chooses weights `w` trading expected
+return `μᵀw` against risk `wᵀΣw`. Every solution is proportional to **Σ⁻¹μ**,
+so the two inputs are:
+
+- **Σ** — handled in Week 2. Ill-conditioning makes `Σ⁻¹` brittle; we feed
+  the well-conditioned Ledoit-Wolf estimate and solve rather than invert.
+- **μ** — handled here. The sample mean has standard error `σ/√T`, so it is
+  the noisiest input, and MVO amplifies errors in μ about **10× more** than
+  errors in Σ (Chopra-Ziemba 1993). This is why μ gets shrunk.
+
+### Expected-return shrinkage (Bayes-Stein, Jorion 1986)
+
+Raw historical means make MVO chase in-sample flukes. Shrinkage pulls the
+mean vector toward a single stable anchor — the GMV portfolio's return
+`μ_min`, which depends only on Σ:
+
+$$\mu_{BS} = (1-\varphi)\hat\mu + \varphi\,\mu_{\min}\mathbf{1}, \qquad
+\mu_{\min} = \frac{\mathbf{1}^\top\Sigma^{-1}\hat\mu}{\mathbf{1}^\top\Sigma^{-1}\mathbf{1}}$$
+
+$$\varphi = \frac{N+2}{(N+2) + T\,(\hat\mu-\mu_{\min}\mathbf1)^\top\Sigma^{-1}(\hat\mu-\mu_{\min}\mathbf1)}$$
+
+φ → 1 (shrink hard) when the means are close together relative to Σ (the
+spread is probably noise); φ → 0 when they are strongly separated. On the
+current universe **φ ≈ 0.78** — the mean dispersion collapses from 8.0% to
+1.8%, and the naive gold-heavy tangency becomes diversified.
+
+### Closed-form results (Lagrange multipliers)
+
+**Global minimum variance** — minimise `wᵀΣw` s.t. `𝟙ᵀw = 1`:
+
+$$w_{gmv} = \frac{\Sigma^{-1}\mathbf1}{\mathbf1^\top\Sigma^{-1}\mathbf1}$$
+
+**Efficient frontier** — add the return constraint `μᵀw = m`. Two
+multipliers give an *affine* solution (the two-fund theorem):
+
+$$w(m) = g + h\,m, \quad
+\sigma^2(m) = \frac{A m^2 - 2Bm + C}{D}$$
+
+with `A = 𝟙ᵀΣ⁻¹𝟙`, `B = 𝟙ᵀΣ⁻¹μ`, `C = μᵀΣ⁻¹μ`, `D = AC − B²`, and
+`g, h` the corresponding combinations of `Σ⁻¹𝟙` and `Σ⁻¹μ`. Variance is a
+parabola in the target return; its vertex is the GMV point `(1/A, B/A)`.
+
+**Tangency (max Sharpe)** — with a risk-free rate `r_f`:
+
+$$w_{tan} = \frac{\Sigma^{-1}(\mu - r_f\mathbf1)}{\mathbf1^\top\Sigma^{-1}(\mu - r_f\mathbf1)}$$
+
+All three apply `Σ⁻¹` via a linear solve. Weights are invariant to whether
+μ/Σ/r_f are daily or annualised, as long as they are consistent.
+
+### Constrained optimization (long-only, sector caps)
+
+Inequality constraints (`wᵢ ≥ 0`, `Σ_sector wᵢ ≤ cap`) remove the closed
+form — the problem becomes a QP with an unknown active set. Solved with
+scipy **SLSQP**, minimising `wᵀΣw` (or `−Sharpe`, or hitting a target
+return) subject to full investment, the box bounds, and one ≤-cap
+inequality per capped sector. The constrained minimum variance is always
+≥ the unconstrained GMV — constraints can only cost you. See ADR-005 for
+why a solver rather than a hand-rolled QP.
+
+### Week 3 empirical result
+
+| Portfolio | QQQ | GLDM | FBTC | VXUS | ret | vol | Sharpe |
+|-----------|----:|----:|----:|----:|----:|----:|----:|
+| Tangency (raw μ) | +37% | **+69%** | −2% | −4% | 32% | 17% | 1.59 |
+| Tangency (shrunk μ) | +21% | +36% | −2% | +45% | 25% | 15% | 1.35 |
+| Max-Sharpe (long-only) | +19% | +36% | 0% | +45% | 25% | 14% | 1.34 |
+
+The raw-μ tangency is the landmine: 69% gold, shorting the diversifiers.
+Shrinkage plus long-only/sector caps turns it into a portfolio that
+actually spreads risk. Note the shrunk max-Sharpe ≈ min-variance, because
+heavy shrinkage flattened the returns — with little return signal left, the
+best Sharpe portfolio is essentially the lowest-risk one. That is the
+honest conclusion on 573 days of data, not a bug.
+
+### References (Week 3)
+
+- H. Markowitz (1952). *Portfolio Selection.* Journal of Finance 7(1).
+- P. Jorion (1986). *Bayes-Stein Estimation for Portfolio Analysis.*
+  Journal of Financial and Quantitative Analysis 21(3), 279–292.
+- V. Chopra and W. Ziemba (1993). *The Effect of Errors in Means,
+  Variances, and Covariances on Optimal Portfolio Choice.* Journal of
+  Portfolio Management 19(2).

@@ -63,3 +63,4 @@ What did we decide? State it directly. Include enough concreteness (file paths, 
 - [ADR-002](002-test-contracts-not-calibration.md) — Pipeline tests validate contracts, not market calibration.
 - [ADR-003](003-asset-universe-vxus.md) — Replace VT with VXUS in the asset universe.
 - [ADR-004](004-covariance-estimator-design.md) — Implement covariance estimators from scratch, shrink toward a scaled identity.
+- [ADR-005](005-optimizer-closed-form-and-slsqp.md) — Closed form where it exists, SLSQP where it doesn't; shrink the mean vector.

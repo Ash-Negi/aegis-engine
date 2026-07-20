@@ -19,7 +19,19 @@ Four ETFs, each chosen to hedge a different failure mode:
 - **Week 2 (done)** — `math-engine/covariance/`: sample, EWMA, Ledoit-Wolf shrinkage, condition-number + eigenstructure diagnostics. Demo `python -m covariance.report`. Design recorded in `docs/adr/004-covariance-estimator-design.md`; math in `docs/math.md`.
 - **Week 3 (done)** — `math-engine/optimizer/`: expected-return shrinkage (Bayes-Stein), closed-form MVO (GMV/tangency/frontier via Lagrange), constrained long-only + sector caps (SLSQP). Demo `python -m optimizer.report`. Design in `docs/adr/005-optimizer-closed-form-and-slsqp.md`.
 - **Week 4 (done)** — `math-engine/backtest/`: band-rebalancing engine with transaction costs + slippage, performance metrics (CAGR/Sharpe/maxDD/Calmar), per-asset attribution. Demo `python -m backtest.report`. **Phase 1 (Math Engine) complete.**
-- **Phase 2+** — `math-engine/signals/` (HMM regimes, cointegration), then the Phase 3 execution layer.
+
+## Phase 2 roadmap
+
+- **Phase 2 (done)** — `math-engine/signals/`: from-scratch Gaussian HMM (Baum-Welch EM in log space, Viterbi), regime labeling by fitted volatility rank, regime-conditioned multiplicative weight tilts, cointegration (Engle-Granger + Johansen via statsmodels) with hysteresis spread signals. Demo `python -m signals.report`. Design in `docs/adr/006-hmm-from-scratch-stats-tests-delegated.md`.
+- **Phase 3** — execution layer: Python Redis publisher, Java 21 / Spring Boot consumer with an order state machine, Postgres audit ledger, docker-compose.
+
+## Phase 2 findings
+
+1. **The HMM validated itself against real events.** Fit on the equal-weight return proxy with no event calendar, the crisis state landed on exactly three contiguous episodes: 2024-08-01→08 (yen carry unwind), 2025-04-03→11 (tariff shock), 2026-01-30→02-06. Treat this as the module's strongest correctness evidence.
+
+2. **No pair in this universe is cointegrated** — best is GLDM~VXUS at EG p=0.111, and the Johansen trace test gives rank r=0. This is the *correct* answer for a universe built (ADR-003) so each asset hedges a different failure mode; assets with no shared driver should have no shared stochastic trend. The stat-arb machinery is built and tested but has nothing to trade here. Do not "fix" this by loosening α.
+
+3. **EM monotonicity vs. conditioning.** `GaussianHMM` adds `Σₖ += εI` (ε=1e-6) so sparse states stay invertible, which breaks strict EM monotonicity by ~1e-3 on a log-likelihood of ~5000. `test_em_monotonic` runs with ε=0 to keep the guarantee testable; don't weaken that test to accommodate the regulariser.
 
 ## Sample landmines (Week 1 review, 2026-04-16)
 
@@ -40,12 +52,4 @@ For data-correctness questions ("does this look right?") on this project, run ac
 
 ## Environment
 
-Use `/Users/level_up/Documents/QuantDev/aegis-engine/.venv/bin/python` for all Python/pytest commands. The venv has pytest, numpy, pandas, yfinance installed. `python3` on PATH is a bare Homebrew install without these.
-
-## Week 2 target (covariance estimation)
-Module: `math-engine/covariance/`
-- Sample covariance (baseline)
-- EWMA (λ=0.94, RiskMetrics standard)
-- Ledoit-Wolf shrinkage (primary estimator)
-- Log condition number before and after shrinkage
-- Eigendecomposition — how many real risk factors does the 4×4 matrix have?
+Use `/Users/level_up/Documents/QuantDev/aegis-engine/.venv/bin/python` for all Python/pytest commands. The venv has pytest, numpy, pandas, scipy, statsmodels, yfinance, matplotlib installed. `python3` on PATH is a bare Homebrew install without these.

@@ -22,6 +22,14 @@ from signals.regimes import (
     REGIME_ORDER,
 )
 from signals.adaptive import AdaptiveWeightEngine, AdaptiveWeights
+from signals.cointegration import (
+    engle_granger,
+    test_all_pairs,
+    johansen_rank,
+    spread_signal,
+    PairTest,
+    SpreadSignal,
+)
 
 __all__ = [
     "GaussianHMM",
@@ -34,4 +42,10 @@ __all__ = [
     "REGIME_ORDER",
     "AdaptiveWeightEngine",
     "AdaptiveWeights",
+    "engle_granger",
+    "test_all_pairs",
+    "johansen_rank",
+    "spread_signal",
+    "PairTest",
+    "SpreadSignal",
 ]

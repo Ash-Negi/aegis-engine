@@ -331,3 +331,201 @@ demonstrating the no-trade region doing its job.
 
 - R. Grinold and R. Kahn (1999). *Active Portfolio Management*, 2nd ed.
   (transaction-cost-aware implementation).
+
+---
+
+## Phase 2 — Signal development
+
+Phase 1 assumes the world is stationary: one Σ, one μ, one optimal portfolio
+for all time. Phase 2 drops that assumption. It adds a model of *which market
+we are in* (regimes), a rule for *responding to it* (adaptive weights), and a
+test for *which assets are structurally tied together* (cointegration).
+
+### 1 · Gaussian Hidden Markov Model
+
+The model says: an unobserved state `zₜ ∈ {1..K}` evolves as a Markov chain,
+and the observed return is Gaussian conditional on that state.
+
+```
+z₁ ~ π                       initial state distribution
+zₜ | zₜ₋₁ ~ A[zₜ₋₁, ·]       K×K transition matrix
+xₜ | zₜ = k ~ N(μₖ, Σₖ)      state-conditional emission
+```
+
+Parameters `θ = (π, A, {μₖ}, {Σₖ})`. Three problems, three algorithms:
+
+**Evaluation — the forward algorithm.** Define `αₜ(k) = P(x₁..ₜ, zₜ=k)`.
+
+```
+α₁(k) = πₖ · N(x₁ | μₖ, Σₖ)
+αₜ(k) = N(xₜ | μₖ, Σₖ) · Σⱼ αₜ₋₁(j)·A[j,k]
+P(x | θ) = Σₖ α_T(k)
+```
+
+Naively this underflows: α is a product of T probabilities, so for T=573 it
+is ~10⁻¹⁵⁰⁰. The implementation works entirely in **log space**, replacing
+`Σᵢ αᵢ` with the log-sum-exp trick `log Σᵢ e^{aᵢ} = a* + log Σᵢ e^{aᵢ−a*}`
+where `a* = max aᵢ`. This is the single most important numerical decision in
+the module — the scaling-factor alternative is equivalent but harder to audit.
+
+**Learning — Baum-Welch (EM).** The backward variable
+`βₜ(k) = P(xₜ₊₁..T | zₜ=k)` completes the picture. The E-step forms the
+state posteriors and the pairwise transition posteriors:
+
+```
+γₜ(k) = P(zₜ=k | x)     ∝ αₜ(k)·βₜ(k)
+ξₜ(j,k) = P(zₜ=j, zₜ₊₁=k | x) ∝ αₜ(j)·A[j,k]·N(xₜ₊₁|μₖ,Σₖ)·βₜ₊₁(k)
+```
+
+The M-step is then just γ- and ξ-weighted maximum likelihood:
+
+```
+πₖ  = γ₁(k)
+A[j,k] = Σₜ ξₜ(j,k) / Σₜ γₜ(j)
+μₖ  = Σₜ γₜ(k)·xₜ / Σₜ γₜ(k)
+Σₖ  = Σₜ γₜ(k)·(xₜ−μₖ)(xₜ−μₖ)' / Σₜ γₜ(k)
+```
+
+EM guarantees the log-likelihood is **non-decreasing** every iteration. That
+guarantee is the module's primary correctness test (`test_em_monotonic`): if
+the E and M steps are inconsistent, the likelihood will dip.
+
+*One deliberate exception.* A regulariser `Σₖ += εI` (default ε=1e-6) is added
+to keep the state covariances invertible when a state captures few
+observations. This trades the exact monotonicity guarantee for numerical
+robustness, and produces dips of order 1e-3 on a log-likelihood of ~5000.
+The monotonicity test therefore runs with ε=0 to check the pure EM
+implementation, while production fitting keeps the regulariser.
+
+**Decoding — Viterbi.** The most likely *state sequence* (not the most likely
+state at each time — they differ) via the max-product recursion in log space:
+
+```
+δₜ(k) = max_j [ δₜ₋₁(j) + log A[j,k] ] + log N(xₜ | μₖ, Σₖ)
+```
+
+with backpointers, then a backward pass to recover the path.
+
+### 2 · From states to regimes
+
+The HMM returns K anonymous states. Naming them is a modelling decision made
+*after* fitting: states are ranked by fitted volatility `√Σₖ` and assigned, in
+ascending order, `low_vol_trending → high_vol_meanrev → crisis`.
+
+This ordering is deliberate. The alternative — pinning states to labels by
+seeding the EM with hand-chosen means — biases the fit toward the answer you
+expect. Ranking after the fact keeps the statistics honest (EM optimises
+likelihood, nothing else) and the labels interpretable.
+
+**Empirical validation.** Fit on the equal-weight portfolio return over
+573 days (2024-01-12 → 2026-04-27), the crisis state captured 19 days in three
+contiguous episodes:
+
+| Episode | Days | Known event |
+|---------|-----:|-------------|
+| 2024-08-01 → 2024-08-08 | 6 | Yen carry-trade unwind |
+| 2025-04-03 → 2025-04-11 | 7 | Tariff announcement shock |
+| 2026-01-30 → 2026-02-06 | 6 | — |
+
+| Regime | Ann. return | Ann. vol | Days | Frequency |
+|--------|----:|----:|----:|----:|
+| low_vol_trending | +58.9% | 11.3% | 120 | 20.9% |
+| high_vol_meanrev | +29.8% | 18.7% | 434 | 75.7% |
+| crisis | −165.7% | 53.1% | 19 | 3.3% |
+
+The model was given no event calendar. It rediscovered the August 2024 and
+April 2025 stress episodes from the return series alone — evidence it is
+extracting genuine regime structure rather than partitioning noise.
+
+### 3 · Adaptive weights
+
+Given base weights `w` from the Phase 1 optimizer and a regime `r`, apply a
+**multiplicative** tilt by asset class and renormalise:
+
+```
+w̃ᵢ = wᵢ · m_r(class(i))          m_r from config
+w*  = w̃ / Σⱼ w̃ⱼ
+```
+
+Multiplicative-and-renormalise is chosen over additive tilts because it
+preserves the Phase 1 constraints automatically. A positive weight scaled by a
+positive multiplier stays positive (long-only holds), the renormalisation
+restores the budget (Σw = 1 holds), and a zero weight stays zero — the engine
+tilts what you already hold rather than opening new positions.
+
+Implied turnover is `½Σᵢ|w*ᵢ − wᵢ|`, which feeds the Phase 1 cost model
+directly, so a regime switch has a quantifiable price.
+
+Empirically, on the max-Sharpe base (QQQ 19.1%, GLDM 36.2%, VXUS 44.7%):
+
+| Regime | QQQ | GLDM | VXUS | Turnover |
+|--------|----:|----:|----:|----:|
+| base | 19.1% | 36.2% | 44.7% | — |
+| low_vol_trending | 21.6% | 27.8% | 50.6% | 8.4% |
+| high_vol_meanrev | 19.1% | 36.2% | 44.7% | 0.0% |
+| crisis | 12.4% | 58.6% | 29.0% | 22.5% |
+
+Directionally correct: risk-on lifts equity and cuts gold; crisis does the
+reverse, moving gold to a majority holding.
+
+### 4 · Cointegration
+
+**Correlation vs cointegration.** Correlation describes co-movement of
+*returns*. Cointegration is a stronger, structural claim about *prices*: two
+non-stationary series `y`, `x` are cointegrated if some linear combination
+`y − βx` is stationary. Correlated assets can drift apart forever;
+cointegrated ones cannot. Only cointegration justifies a mean-reversion trade
+on the spread, because only then is reversion statistically guaranteed.
+
+**Engle-Granger, two steps.**
+
+1. OLS `y = α + βx` on log prices → hedge ratio β and spread `s = y − α − βx`.
+2. Test `s` for a unit root (ADF). Rejecting the unit-root null means the
+   spread is stationary, so the pair is cointegrated.
+
+The test is run on *ordered* pairs: regressing y on x gives a different hedge
+ratio than x on y, so both directions are reported.
+
+**Johansen trace test.** Engle-Granger handles one pair at a time and assumes
+a single cointegrating vector. Johansen tests the whole system jointly and
+returns the cointegration **rank** r — how many independent long-run
+relationships exist among all N assets. The trace statistic for `H₀: rank ≤ r`
+is compared to its 95% critical value; the rank is the number of hypotheses
+rejected.
+
+**Spread signal.** The spread is standardised to `z = (s − μ_s)/σ_s`, and
+positions are taken with **hysteresis**: enter at `|z| > entry_z` (short the
+spread when z is high, long when low — betting on reversion), exit only when
+`|z| < exit_z`, with `exit_z < entry_z`. The gap between the two thresholds is
+what prevents a position from flipping on every threshold cross while the
+spread oscillates around the entry level — the difference between one trade
+and forty.
+
+**Empirical result — an honest negative.** On this universe, **no pair is
+cointegrated** at α=0.05 (best: GLDM~VXUS, EG p=0.111), and the Johansen trace
+test returns **rank r = 0**: no long-run relationship among the four assets at
+all.
+
+This is the correct and expected answer, not a failure. The universe was
+built (ADR-003) so that each asset hedges a *different* failure mode — tech
+beta, inflation, monetary debasement, ex-US growth. Assets deliberately chosen
+not to share a common driver should not share a stochastic trend. Finding
+cointegration here would have suggested the diversification thesis was wrong.
+
+The correct statistical arbitrage universe is same-sector pairs (KO/PEP,
+GLD/IAU, sector-ETF vs its own constituents), which is a different portfolio
+than this one. The machinery is built, tested, and correct; it reports that
+this universe has nothing to trade — which is exactly what a test is for.
+
+### References (Phase 2)
+
+- L. Rabiner (1989). "A Tutorial on Hidden Markov Models and Selected
+  Applications in Speech Recognition." *Proc. IEEE* 77(2). — the canonical
+  forward-backward / Baum-Welch / Viterbi reference.
+- R. Engle and C. Granger (1987). "Co-integration and Error Correction."
+  *Econometrica* 55(2).
+- S. Johansen (1991). "Estimation and Hypothesis Testing of Cointegration
+  Vectors in Gaussian Vector Autoregressive Models." *Econometrica* 59(6).
+- A. Ang and G. Bekaert (2002). "International Asset Allocation with
+  Regime Shifts." *Review of Financial Studies* 15(4). — regime-conditioned
+  allocation.

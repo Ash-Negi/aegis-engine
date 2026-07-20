@@ -2,17 +2,20 @@
 
 A distributed quantitative execution system for multi-asset portfolio management with macro regime awareness and tactical position scaling.
 
-![Phase 1 Week 1 — Asset Universe Overview](docs/images/phase1_week1_overview.png)
-*Latest snapshot: normalized prices, return distributions, drawdown curves, and rolling vol for the four-asset universe (574-day common period, 2024-01-11 → 2026-04-27).*
+![Phase 1 — Asset Universe Overview](docs/images/phase1_week1_overview.png)
+*Normalized prices, return distributions, drawdown curves, and rolling vol for the four-asset universe (574-day common period, 2024-01-11 → 2026-04-27).*
 
-![Phase 1 Week 2 — Covariance Estimation](docs/images/phase1_week2_covariance.png)
-*Week 2: correlation structure, the risk-factor spectrum (one factor carries 73% of variance), condition number across the three estimators, and Ledoit-Wolf shrinkage pulling eigenvalues toward the target μ.*
+![Phase 1 — Covariance Estimation](docs/images/phase1_week2_covariance.png)
+*Correlation structure, the risk-factor spectrum (one factor carries 73% of variance), condition number across the three estimators, and Ledoit-Wolf shrinkage pulling eigenvalues toward the target μ.*
 
-![Phase 1 Week 3 — Mean-Variance Optimization](docs/images/phase1_week3_frontier.png)
-*Week 3: the efficient frontier (unconstrained + long-only) with the capital market line, key-portfolio weights, Bayes-Stein shrinkage of the mean vector, and the long-only frontier's changing composition. Shrinkage turns a 69%-gold overfit into a diversified portfolio.*
+![Phase 1 — Mean-Variance Optimization](docs/images/phase1_week3_frontier.png)
+*The efficient frontier (unconstrained + long-only) with the capital market line, key-portfolio weights, Bayes-Stein shrinkage of the mean vector, and the long-only frontier's changing composition. Shrinkage turns a 69%-gold overfit into a diversified portfolio.*
 
-![Phase 1 Week 4 — Backtest](docs/images/phase1_week4_backtest.png)
-*Week 4: net-of-cost equity curves (optimized vs equal-weight vs buy-and-hold), drawdown, weight drift under ±5% rebalancing bands, and per-asset return attribution with cost drag. The optimizer earns less than equal-weight but at a higher Sharpe (1.56 vs 1.26) and shallower drawdown.*
+![Phase 1 — Backtest](docs/images/phase1_week4_backtest.png)
+*Net-of-cost equity curves (optimized vs equal-weight vs buy-and-hold), drawdown, weight drift under ±5% rebalancing bands, and per-asset return attribution with cost drag. The optimizer earns less than equal-weight but at a higher Sharpe (1.56 vs 1.26) and shallower drawdown.*
+
+![Phase 2 — Signal Development](docs/images/phase2_signals.png)
+*A from-scratch Gaussian HMM's detected regimes over the equity curve, its smoothed regime probabilities, the resulting weight tilts, and a cointegration spread signal. Given no event calendar, the model assigned its crisis state to exactly three episodes — the August 2024 yen carry unwind, the April 2025 tariff shock, and January 2026.*
 
 ## Architecture
 
@@ -43,7 +46,7 @@ This project is built to be auditable by design. Every nontrivial decision and m
 
 A five-phase build. Each phase produces something working and demonstrable — no phase depends on completing all prior phases perfectly.
 
-### Phase 1 — Math Engine *(in progress)*
+### Phase 1 — Math Engine *(complete)*
 
 *Proves: can handle real financial data and translate textbook math (covariance estimation, Lagrange multipliers, efficient frontier) into production-quality code with proper testing and audit trails.*
 
@@ -52,13 +55,15 @@ A five-phase build. Each phase produces something working and demonstrable — n
 - [x] — Mean-variance optimizer with expected-return shrinkage; efficient frontier construction; constrained optimization (long-only, sector caps)
 - [x] — Backtest harness with transaction costs, slippage modeling, rebalancing bands, performance attribution
 
-### Phase 2 — Signal Development *(planned)*
+### Phase 2 — Signal Development *(complete)*
 
 *Proves: understands that markets are non-stationary and can build adaptive systems instead of static optimizers. Distinguishes statistical arbitrage thinking from passive rebalancing.*
 
-- Hidden Markov Model regime detection (low-vol trending, high-vol mean-reverting, crisis)
-- Adaptive weight engine that responds to regime classifications — risk-on tilts toward equity, risk-off tilts toward gold
-- Cointegration testing (Engle-Granger, Johansen) on asset pairs; spread-based rebalance signals when deviations exceed 2σ
+- [x] — Hidden Markov Model regime detection, built from scratch (Baum-Welch EM in log space, Viterbi decoding), labeling low-vol trending / high-vol mean-reverting / crisis
+- [x] — Adaptive weight engine that responds to regime classifications — risk-on tilts toward equity, risk-off tilts toward gold, with constraint-preserving multiplicative tilts
+- [x] — Cointegration testing (Engle-Granger, Johansen) on asset pairs; spread-based signals with entry/exit hysteresis at ±2σ
+
+Two findings worth stating plainly. The HMM, given no event calendar, assigned its crisis state to exactly three episodes — the August 2024 yen carry-trade unwind, the April 2025 tariff shock, and January 2026 — recovering known market stress from the return series alone. And the cointegration layer returns an honest negative: **no pair is cointegrated** here (Johansen rank r=0), which is the correct result for a universe deliberately built so each asset hedges a different failure mode. See [ADR-006](docs/adr/006-hmm-from-scratch-stats-tests-delegated.md) for the build-vs-borrow reasoning.
 
 ### Phase 3 — Execution Layer *(planned)*
 
@@ -100,7 +105,7 @@ Four ETFs, each chosen to hedge a different failure mode. See [ADR-003](docs/adr
 
 ## Tech Stack
 
-- **Math Engine:** Python 3.12+ (NumPy, SciPy, Pandas, yfinance, hmmlearn, scikit-learn)
+- **Math Engine:** Python 3.12+ (NumPy, SciPy, Pandas, statsmodels, yfinance)
 - **ML / NLP:** FinBERT, quantized local LLMs (Mistral / Llama) — *planned*
 - **Execution Engine:** Java 21+ (Spring Boot, Virtual Threads), Alpaca API — *planned*
 - **Messaging:** Redis pub/sub — *planned*
@@ -113,10 +118,11 @@ Four ETFs, each chosen to hedge a different failure mode. See [ADR-003](docs/adr
 ```bash
 cd math-engine
 pip install -r requirements.txt
-python main.py                  # Week 1 — data pipeline overview
-python -m covariance.report     # Week 2 — covariance estimators + conditioning
-python -m optimizer.report      # Week 3 — efficient frontier + optimal weights
-python -m backtest.report       # Week 4 — backtest with costs + attribution
+python main.py                  # data pipeline overview
+python -m covariance.report     # covariance estimators + conditioning
+python -m optimizer.report      # efficient frontier + optimal weights
+python -m backtest.report       # backtest with costs + attribution
+python -m signals.report        # regimes, adaptive tilts, cointegration
 ```
 
 ## Running Tests
@@ -130,25 +136,31 @@ pytest tests/ -v
 
 ```
 aegis-engine/
-├── math-engine/             # Phase 1: Python math engine
+├── math-engine/             # Phases 1–2: Python math engine
 │   ├── config.py            # All tunable parameters (single source of truth)
-│   ├── main.py              # Entry point — runs the data pipeline (Week 1)
+│   ├── main.py              # Entry point — runs the data pipeline
 │   ├── data/pipeline.py     # Fetch, clean, transform daily prices
-│   ├── covariance/          # Week 2: sample / EWMA / Ledoit-Wolf + diagnostics
+│   ├── covariance/          # Sample / EWMA / Ledoit-Wolf + diagnostics
 │   │   ├── estimators.py    # The three covariance estimators
 │   │   ├── diagnostics.py   # Condition number, eigendecomposition
-│   │   └── report.py        # Week 2 demo (python -m covariance.report)
-│   ├── optimizer/           # Week 3: mean-variance optimization
+│   │   └── report.py        # Demo (python -m covariance.report)
+│   ├── optimizer/           # Mean-variance optimization
 │   │   ├── expected_returns.py  # μ estimation + Bayes-Stein shrinkage
 │   │   ├── mean_variance.py     # Closed-form GMV / tangency / frontier
 │   │   ├── constrained.py       # Long-only + sector caps (SLSQP)
-│   │   └── report.py            # Week 3 demo (python -m optimizer.report)
-│   ├── backtest/            # Week 4: friction-aware backtest harness
+│   │   └── report.py            # Demo (python -m optimizer.report)
+│   ├── backtest/            # Friction-aware backtest harness
 │   │   ├── engine.py            # Band-rebalancing simulation with costs
 │   │   ├── metrics.py           # CAGR, Sharpe, drawdown, Calmar
 │   │   ├── attribution.py       # Per-asset contribution + cost drag
-│   │   └── report.py            # Week 4 demo (python -m backtest.report)
-│   └── tests/               # Contract-based test suite
+│   │   └── report.py            # Demo (python -m backtest.report)
+│   ├── signals/             # Phase 2: regime detection + stat-arb
+│   │   ├── hmm.py               # From-scratch Gaussian HMM (Baum-Welch, Viterbi)
+│   │   ├── regimes.py           # HMM states → named market regimes
+│   │   ├── adaptive.py          # Regime-conditioned weight tilts
+│   │   ├── cointegration.py     # Engle-Granger, Johansen, spread signals
+│   │   └── report.py            # Demo (python -m signals.report)
+│   └── tests/               # Contract-based test suite (120 tests)
 └── docs/
     ├── adr/                 # Architecture Decision Records
     ├── retros/              # Change retrospectives

@@ -131,6 +131,54 @@ class CovarianceConfig:
     factor_variance_threshold: float = 0.05
 
 
+# ─── Optimizer Config (Week 3) ────────────────
+@dataclass
+class OptimizerConfig:
+    """
+    Parameters for the Week 3 mean-variance optimization layer.
+
+    MVO solves for weights w ∝ Σ⁻¹μ. Two inputs make or break it, and both
+    are landmines flagged in the Week 1 review:
+      * Σ is ill-conditioned → the inverse is brittle. Handled upstream by
+        the covariance layer (Ledoit-Wolf) and by solving rather than
+        explicitly inverting.
+      * μ (historical mean returns) is extremely noisy → the optimizer
+        chases in-sample flukes and produces concentrated, levered bets.
+        Handled here by expected-return shrinkage.
+    """
+
+    # Which covariance estimator feeds the optimizer. Ledoit-Wolf by
+    # default: it is the best-conditioned, so Σ⁻¹ is safest.
+    covariance_estimator: str = "ledoit_wolf"   # sample | ewma | ledoit_wolf
+
+    # ── Expected-return shrinkage ──
+    # Vanilla MVO with raw historical means overfits: in this sample every
+    # asset had large positive returns, so unconstrained MVO piles into
+    # whichever had the best in-sample Sharpe (gold). Shrinkage pulls the
+    # noisy mean vector toward a common target so the optimizer stops
+    # trusting spurious differences.
+    return_shrinkage: str = "bayes_stein"       # none | bayes_stein | grand_mean
+    # Only used when return_shrinkage == "grand_mean": a fixed intensity in
+    # [0, 1] toward the cross-sectional average return. Bayes-Stein instead
+    # derives its intensity from the data.
+    grand_mean_intensity: float = 0.5
+
+    # ── Constraints (for the constrained optimizer) ──
+    long_only: bool = True                      # no shorting: w_i ≥ 0
+    max_weight: float = 1.0                     # per-asset ceiling
+    # Sector (asset-class) caps: total weight in a class may not exceed the
+    # cap. "equity" groups QQQ + VXUS, which are 0.72-correlated — without a
+    # cap the optimizer would happily double up on the same equity beta.
+    sector_caps: dict = field(default_factory=lambda: {"equity": 0.65})
+
+    # ── Efficient frontier ──
+    frontier_points: int = 50                   # resolution of the frontier sweep
+
+    # ── Reporting basis ──
+    annualize: bool = True
+    trading_days_per_year: int = 252
+
+
 # ─── Portfolio Config ─────────────────────
 @dataclass
 class PortfolioConfig:

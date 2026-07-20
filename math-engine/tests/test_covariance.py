@@ -21,6 +21,30 @@ A running record of test changes, newest on top. Keep entries terse: name
 the test, say WHAT invariant it protects, and WHY a bug there would be easy
 to miss.
 
+2026-07-20 — Week 2, Ledoit-Wolf shrinkage
+
+  test_lw_matches_closed_form_reference
+      The load-bearing correctness test. There is no sklearn/scipy in this
+      venv to check against, so the test re-derives δ and Σ* by an
+      INDEPENDENT path: b̄² via the algebraic closed form
+      (1/(N·T²))Σ‖xₖ‖⁴ − (1/T)‖S‖², versus the estimator's direct
+      outer-product loop. Two different derivations agreeing is strong
+      evidence both are right, since a shared bug across both is unlikely.
+  test_lw_shrinkage_in_unit_interval
+      δ ∈ [0, 1]. If δ ever left the interval, Σ* would stop being a convex
+      combination and could go non-PSD.
+  test_lw_is_convex_combination
+      Off-diagonals of Σ* equal (1−δ)·S (target is diagonal), diagonals equal
+      δμ + (1−δ)Sᵢᵢ. Pins the exact blend structure.
+  test_lw_improves_conditioning
+      cond(Σ_LW) < cond(sample) on real data — the entire reason the
+      estimator exists. A regression that left conditioning unchanged would
+      mean shrinkage silently did nothing.
+  test_lw_single_asset_guard
+      p=1 ⇒ d²=0 ⇒ the div-by-zero guard must return S with δ=0, not NaN.
+  test_lw_symmetric / _psd / _preserves_order
+      Shared structural contract.
+
 2026-07-20 — Week 2, EWMA (RiskMetrics)
 
   test_ewma_hand_computed
@@ -73,7 +97,12 @@ import pytest
 
 from config import CovarianceConfig, DataConfig, TICKERS
 from data.pipeline import DataPipeline
-from covariance import sample_covariance, ewma_covariance
+from covariance import (
+    sample_covariance,
+    ewma_covariance,
+    ledoit_wolf_covariance,
+    ledoit_wolf_shrinkage,
+)
 
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -234,3 +263,88 @@ class TestEWMACovariance:
         for bad in (0.0, 1.0, 1.5, -0.1):
             with pytest.raises(ValueError, match="ewma_lambda"):
                 ewma_covariance(log_returns, CovarianceConfig(ewma_lambda=bad))
+
+
+# ─── Ledoit-Wolf shrinkage ────────────────────────────────────────────────────
+
+def _lw_reference(returns: pd.DataFrame) -> tuple[float, np.ndarray]:
+    """
+    Independent Ledoit-Wolf reference used only by the tests.
+
+    Computes the shrinkage δ and Σ* via the algebraic closed form for b̄²,
+
+        b̄² = (1/(N·T²)) Σ_k ‖xₖ‖⁴  −  (1/T)‖S‖²
+
+    which is a DIFFERENT computation path than the estimator's direct
+    outer-product loop. If both agree, both are almost certainly correct.
+    """
+    X = returns.to_numpy(dtype=float)
+    T, N = X.shape
+    Xc = X - X.mean(axis=0, keepdims=True)
+    S = (Xc.T @ Xc) / T
+
+    mu = np.trace(S) / N
+    d2 = np.sum((S - mu * np.eye(N)) ** 2) / N
+
+    norms4 = (np.sum(Xc**2, axis=1)) ** 2          # ‖xₖ‖⁴ per observation
+    s_norm2 = np.sum(S**2) / N                      # ‖S‖²
+    b2_bar = np.sum(norms4) / (N * T**2) - s_norm2 / T
+
+    b2 = min(b2_bar, d2)
+    delta = b2 / d2
+    sigma = delta * mu * np.eye(N) + (1.0 - delta) * S
+    return delta, sigma
+
+
+class TestLedoitWolf:
+    """Verify the from-scratch shrinkage estimator."""
+
+    def test_lw_matches_closed_form_reference(self, log_returns):
+        """Estimator's direct-loop b̄² must match the closed-form derivation."""
+        result = ledoit_wolf_shrinkage(log_returns)
+        delta_ref, sigma_ref = _lw_reference(log_returns)
+
+        np.testing.assert_allclose(result.shrinkage, delta_ref, rtol=1e-12)
+        np.testing.assert_allclose(result.covariance.to_numpy(), sigma_ref, rtol=1e-12)
+
+    def test_lw_shrinkage_in_unit_interval(self, log_returns):
+        delta = ledoit_wolf_shrinkage(log_returns).shrinkage
+        assert 0.0 <= delta <= 1.0, f"shrinkage {delta} outside [0, 1]"
+
+    def test_lw_is_convex_combination(self, log_returns):
+        """Σ* = δ·μI + (1-δ)·S, checked entry-by-entry against the pieces."""
+        r = ledoit_wolf_shrinkage(log_returns)
+        d, mu = r.shrinkage, r.mu
+        S = r.sample.to_numpy()
+        expected = d * mu * np.eye(len(TICKERS)) + (1 - d) * S
+        np.testing.assert_allclose(r.covariance.to_numpy(), expected, rtol=1e-12)
+
+    def test_lw_improves_conditioning(self, log_returns):
+        """The point of shrinkage: a smaller condition number than sample."""
+        lw = ledoit_wolf_covariance(log_returns).to_numpy()
+        sample = sample_covariance(log_returns).to_numpy()
+        cond_lw = np.linalg.cond(lw)
+        cond_sample = np.linalg.cond(sample)
+        assert cond_lw < cond_sample, (
+            f"LW cond {cond_lw:.1f} not below sample cond {cond_sample:.1f}"
+        )
+
+    def test_lw_single_asset_guard(self, log_returns):
+        """p=1 ⇒ d²=0 ⇒ guard returns S with δ=0 (no NaN)."""
+        one = log_returns[[TICKERS[0]]]
+        r = ledoit_wolf_shrinkage(one)
+        assert r.shrinkage == 0.0
+        assert np.isfinite(r.covariance.to_numpy()).all()
+
+    def test_lw_symmetric(self, log_returns):
+        cov = ledoit_wolf_covariance(log_returns).to_numpy()
+        np.testing.assert_allclose(cov, cov.T, atol=1e-18)
+
+    def test_lw_psd(self, log_returns):
+        cov = ledoit_wolf_covariance(log_returns).to_numpy()
+        assert np.linalg.eigvalsh(cov).min() > -1e-12
+
+    def test_lw_preserves_order(self, log_returns):
+        cov = ledoit_wolf_covariance(log_returns)
+        assert list(cov.index) == list(TICKERS)
+        assert list(cov.columns) == list(TICKERS)

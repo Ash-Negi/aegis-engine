@@ -26,6 +26,8 @@ The column-order preservation is deliberate — see module docstring in
 covariance/__init__.py.
 """
 
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 
@@ -206,3 +208,149 @@ def ewma_covariance(
         cov = cov * config.trading_days_per_year
 
     return _as_frame(cov, columns)
+
+
+# ─── Ledoit-Wolf shrinkage covariance ─────────────────────────────────────────
+
+@dataclass
+class LedoitWolfResult:
+    """
+    Full output of the Ledoit-Wolf estimator, so the report can show not
+    just the shrunk matrix but *how much* was shrunk and toward what.
+
+        covariance : the estimator's output Σ* = δ·target + (1-δ)·sample
+        shrinkage  : δ ∈ [0, 1], the weight placed on the structured target
+        target     : the shrinkage target μ·I (a labelled frame)
+        sample     : the biased (1/T) sample covariance being shrunk
+        mu         : μ = average variance = trace(sample)/N (target's scale)
+    """
+    covariance: pd.DataFrame
+    shrinkage: float
+    target: pd.DataFrame
+    sample: pd.DataFrame
+    mu: float
+
+
+def ledoit_wolf_shrinkage(
+    returns: pd.DataFrame,
+    config: CovarianceConfig | None = None,
+    annualize: bool = False,
+) -> LedoitWolfResult:
+    r"""
+    Ledoit-Wolf (2004) shrinkage toward a scaled identity — the "well-
+    conditioned estimator". This is Aegis's PRIMARY covariance estimator.
+
+    The idea. The sample covariance S is unbiased but noisy; a structured
+    target F is biased but stable. Neither is ideal alone, so form a convex
+    combination that trades one against the other:
+
+        Σ* = δ·F + (1 - δ)·S ,     F = μ·I ,     μ = trace(S)/N
+
+    The target μ·I says "every asset has the same variance μ and zero
+    correlation" — deliberately wrong, but perfectly conditioned (condition
+    number 1). Shrinking S toward it pulls the extreme eigenvalues back in:
+    the tiny ones (which S⁻¹ would explode) rise toward μ, the huge ones
+    fall toward μ. That is exactly the fragility the optimizer suffers from,
+    treated at the source.
+
+    The magic is that δ is not a hand-tuned knob — Ledoit-Wolf derive the
+    δ that minimizes expected squared error E‖Σ* − Σ_true‖² in closed form,
+    estimated purely from the data:
+
+        μ   = ⟨S, I⟩ = trace(S)/N                         (mean eigenvalue)
+        d²  = ‖S − μI‖²                                   (how far S is from the sphere)
+        b̄²  = (1/T²) Σ_k ‖xₖxₖᵀ − S‖²                     (sampling noise in S)
+        b²  = min(b̄², d²) ,   a² = d² − b²
+        δ   = b² / d²                                     (shrinkage intensity)
+
+    using the normalized inner product ⟨A,B⟩ = trace(ABᵀ)/N. Intuitively δ
+    is (noise in S) / (distance of S from the target): shrink hard when S is
+    noisy and close to the target, barely at all when S is precise and the
+    target is clearly wrong. Because b² ≤ d², δ ∈ [0, 1] and Σ* is a genuine
+    convex combination — hence symmetric and PSD.
+
+    Convention notes (documented because they matter for reproducibility):
+      * S here is the biased 1/T maximum-likelihood covariance, not the
+        1/(T-1) one sample_covariance() returns. The δ formula is derived
+        for the 1/T version; the two differ only by a scalar T/(T-1), which
+        does not change the condition number or the shrinkage direction.
+      * Returns are demeaned by their sample mean before forming S.
+      * We implement b̄² by the direct definition (average squared distance
+        of each observation's outer product from S) rather than a shortcut,
+        so the code reads like the formula. N=4, T≈490 makes cost a non-issue.
+
+    Args:
+        returns:   clean returns frame (rows = dates, cols = tickers).
+        config:    CovarianceConfig; only trading_days_per_year is read
+                   (for annualize). Ledoit-Wolf has no free parameters — δ
+                   is data-determined, which is the whole point.
+        annualize: multiply Σ*, target and sample by trading_days_per_year.
+                   δ is scale-free and unchanged.
+
+    Returns:
+        LedoitWolfResult with the shrunk covariance and its provenance.
+    """
+    config = config or CovarianceConfig()
+    X, columns = _prepare(returns)
+    T, N = X.shape
+
+    # Demean, then the biased (1/T) sample covariance the LW derivation uses.
+    Xc = X - X.mean(axis=0, keepdims=True)
+    S = (Xc.T @ Xc) / T
+
+    identity = np.eye(N)
+    mu = np.trace(S) / N                       # ⟨S, I⟩ : mean eigenvalue / avg variance
+
+    # d² = ‖S − μI‖², using the normalized norm ‖A‖² = trace(AAᵀ)/N.
+    d2 = np.sum((S - mu * identity) ** 2) / N
+
+    if d2 <= 0.0:
+        # S already equals the target μI (e.g. a single asset, or perfectly
+        # isotropic returns). Shrinkage is undefined and unnecessary — S is
+        # already perfectly conditioned. Return it unshrunk.
+        shrinkage = 0.0
+        cov = S
+    else:
+        # b̄² = (1/T²) Σ_k ‖xₖxₖᵀ − S‖²  (same normalized norm).
+        acc = 0.0
+        for k in range(T):
+            outer = np.outer(Xc[k], Xc[k])
+            acc += np.sum((outer - S) ** 2)
+        b2_bar = acc / (N * T**2)
+
+        # b² is capped at d²: sampling noise cannot exceed the total
+        # dispersion, and the cap guarantees δ ≤ 1.
+        b2 = min(b2_bar, d2)
+        shrinkage = b2 / d2
+        cov = shrinkage * mu * identity + (1.0 - shrinkage) * S
+
+    target = mu * identity
+
+    if annualize:
+        f = config.trading_days_per_year
+        cov = cov * f
+        S = S * f
+        target = target * f
+        mu = mu * f
+
+    return LedoitWolfResult(
+        covariance=_as_frame(cov, columns),
+        shrinkage=float(shrinkage),
+        target=_as_frame(target, columns),
+        sample=_as_frame(S, columns),
+        mu=float(mu),
+    )
+
+
+def ledoit_wolf_covariance(
+    returns: pd.DataFrame,
+    config: CovarianceConfig | None = None,
+    annualize: bool = False,
+) -> pd.DataFrame:
+    """
+    Convenience wrapper returning just the shrunk covariance matrix, so
+    Ledoit-Wolf honours the same (returns → Σ frame) contract as the other
+    estimators. Use ledoit_wolf_shrinkage() when you also want δ and the
+    decomposition for diagnostics.
+    """
+    return ledoit_wolf_shrinkage(returns, config, annualize).covariance

@@ -16,7 +16,7 @@ Four ETFs, each chosen to hedge a different failure mode:
 ## Phase 1 roadmap
 
 - **Week 1 (done)** — `math-engine/data/pipeline.py`: fetch via yfinance, clean, log returns, descriptive stats, correlations. Entry point `math-engine/main.py`.
-- **Week 2** — `math-engine/covariance/`: sample, EWMA, Ledoit-Wolf shrinkage.
+- **Week 2 (done)** — `math-engine/covariance/`: sample, EWMA, Ledoit-Wolf shrinkage, condition-number + eigenstructure diagnostics. Demo `python -m covariance.report`. Design recorded in `docs/adr/004-covariance-estimator-design.md`; math in `docs/math.md`.
 - **Week 3+** — `math-engine/optimizer/`, `math-engine/signals/`.
 
 ## Sample landmines (Week 1 review, 2026-04-16)

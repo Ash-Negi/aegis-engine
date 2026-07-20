@@ -5,6 +5,9 @@ A distributed quantitative execution system for multi-asset portfolio management
 ![Phase 1 Week 1 — Asset Universe Overview](docs/images/phase1_week1_overview.png)
 *Latest snapshot: normalized prices, return distributions, drawdown curves, and rolling vol for the four-asset universe (574-day common period, 2024-01-11 → 2026-04-27).*
 
+![Phase 1 Week 2 — Covariance Estimation](docs/images/phase1_week2_covariance.png)
+*Week 2: correlation structure, the risk-factor spectrum (one factor carries 73% of variance), condition number across the three estimators, and Ledoit-Wolf shrinkage pulling eigenvalues toward the target μ.*
+
 ## Architecture
 
 Aegis operates on three layers:
@@ -39,7 +42,7 @@ A five-phase build. Each phase produces something working and demonstrable — n
 *Proves: can handle real financial data and translate textbook math (covariance estimation, Lagrange multipliers, efficient frontier) into production-quality code with proper testing and audit trails.*
 
 - [x] — Data pipeline: fetch via yfinance, clean, log returns, descriptive statistics, correlations
-- [ ] — Covariance estimation: sample, EWMA (λ=0.94 RiskMetrics), Ledoit-Wolf shrinkage, condition number diagnostics, eigendecomposition
+- [x] — Covariance estimation: sample, EWMA (λ=0.94 RiskMetrics), Ledoit-Wolf shrinkage, condition number diagnostics, eigendecomposition
 - [ ] — Mean-variance optimizer with expected-return shrinkage; efficient frontier construction; constrained optimization (long-only, sector caps)
 - [ ] — Backtest harness with transaction costs, slippage modeling, rebalancing bands, performance attribution
 
@@ -104,7 +107,8 @@ Four ETFs, each chosen to hedge a different failure mode. See [ADR-003](docs/adr
 ```bash
 cd math-engine
 pip install -r requirements.txt
-python main.py
+python main.py                  # Week 1 — data pipeline overview
+python -m covariance.report     # Week 2 — covariance estimators + conditioning
 ```
 
 ## Running Tests
@@ -120,11 +124,16 @@ pytest tests/ -v
 aegis-engine/
 ├── math-engine/             # Phase 1: Python math engine
 │   ├── config.py            # All tunable parameters (single source of truth)
-│   ├── main.py              # Entry point — runs the data pipeline
+│   ├── main.py              # Entry point — runs the data pipeline (Week 1)
 │   ├── data/pipeline.py     # Fetch, clean, transform daily prices
+│   ├── covariance/          # Week 2: sample / EWMA / Ledoit-Wolf + diagnostics
+│   │   ├── estimators.py    # The three covariance estimators
+│   │   ├── diagnostics.py   # Condition number, eigendecomposition
+│   │   └── report.py        # Week 2 demo (python -m covariance.report)
 │   └── tests/               # Contract-based test suite
 └── docs/
     ├── adr/                 # Architecture Decision Records
     ├── retros/              # Change retrospectives
+    ├── math.md              # Connected math notes (derivations per module)
     └── images/              # Charts and visualizations
 ```

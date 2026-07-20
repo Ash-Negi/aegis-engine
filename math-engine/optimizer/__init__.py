@@ -26,6 +26,18 @@ from optimizer.expected_returns import (
     estimate_expected_returns,
     ExpectedReturns,
 )
+from optimizer.mean_variance import (
+    portfolio_return,
+    portfolio_variance,
+    portfolio_volatility,
+    global_minimum_variance,
+    tangency_portfolio,
+    frontier_constants,
+    frontier_weights,
+    efficient_frontier,
+    FrontierResult,
+    FrontierConstants,
+)
 
 __all__ = [
     "sample_mean_returns",
@@ -33,4 +45,14 @@ __all__ = [
     "grand_mean_shrinkage",
     "estimate_expected_returns",
     "ExpectedReturns",
+    "portfolio_return",
+    "portfolio_variance",
+    "portfolio_volatility",
+    "global_minimum_variance",
+    "tangency_portfolio",
+    "frontier_constants",
+    "frontier_weights",
+    "efficient_frontier",
+    "FrontierResult",
+    "FrontierConstants",
 ]

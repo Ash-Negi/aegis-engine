@@ -53,6 +53,10 @@ aegis:
       FBTC: 88.15
       VXUS: 71.30
 
+  risk:
+    max-position-weight: 0.60
+    max-drawdown-pct: 0.20
+
 logging:
   level:
     com.aegis.execution: INFO

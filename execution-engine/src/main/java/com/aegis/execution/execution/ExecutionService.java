@@ -13,6 +13,7 @@ import com.aegis.execution.order.OrderRepository;
 import com.aegis.execution.order.OrderStateMachine;
 import com.aegis.execution.portfolio.PortfolioSnapshot;
 import com.aegis.execution.rebalance.RebalanceService;
+import com.aegis.execution.risk.RiskGuard;
 import com.aegis.execution.signal.InvalidSignalException;
 import com.aegis.execution.signal.TargetWeightSignal;
 import org.slf4j.Logger;
@@ -25,6 +26,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Orchestrates one signal end to end: record it, validate it, plan orders,
@@ -35,16 +37,26 @@ import java.util.Map;
  * "received" and "traded" leaves evidence that the signal arrived. Recovery
  * then reconciles from the ledger instead of replaying blind.
  *
- * <p>Three guards decide whether a signal is acted on at all, and each has a
+ * <p>Five guards decide whether a signal is acted on at all, and each has a
  * different failure mode behind it:
  *
  * <ul>
  *   <li><b>Already seen</b> — Redis pub/sub can redeliver, and the durable
  *       key is re-read on every restart. Without a dedupe on signal id, a
  *       restart loop would re-trade the same target repeatedly.</li>
+ *   <li><b>Drawdown breach</b> — {@link RiskGuard} compares observed equity
+ *       against its all-time high-water mark. Past a configured loss from
+ *       peak, the account stops trading regardless of what the new signal
+ *       says, the same way a real risk desk would rather sit in cash than
+ *       trust a model mid-drawdown.</li>
  *   <li><b>Stale</b> — a signal older than its TTL describes a portfolio that
  *       made sense against last week's prices. Acting on it is worse than
  *       doing nothing.</li>
+ *   <li><b>Concentration breach</b> — {@link RiskGuard} refuses a signal that
+ *       asks for more than the configured ceiling in one symbol. This is a
+ *       backstop independent of the optimizer's own constraints upstream, so
+ *       a bad regime call or a bug in that layer can't bet the book on one
+ *       asset.</li>
  *   <li><b>Invalid</b> — malformed weights become malformed orders.</li>
  * </ul>
  *
@@ -62,6 +74,7 @@ public class ExecutionService {
     private final OrderRepository orders;
     private final FillRepository fills;
     private final SignalRecordRepository signals;
+    private final RiskGuard riskGuard;
     private final Clock clock;
     private final int expectedSchemaVersion;
 
@@ -71,6 +84,7 @@ public class ExecutionService {
                             OrderRepository orders,
                             FillRepository fills,
                             SignalRecordRepository signals,
+                            RiskGuard riskGuard,
                             Clock clock,
                             AegisProperties properties) {
         this.rebalanceService = rebalanceService;
@@ -79,6 +93,7 @@ public class ExecutionService {
         this.orders = orders;
         this.fills = fills;
         this.signals = signals;
+        this.riskGuard = riskGuard;
         this.clock = clock;
         this.expectedSchemaVersion = properties.getSignal().getSchemaVersion();
     }
@@ -99,8 +114,20 @@ public class ExecutionService {
             return List.of();
         }
 
+        Optional<String> drawdownBreach = riskGuard.checkDrawdown(snapshot, now);
+        if (drawdownBreach.isPresent()) {
+            reject(signal, rawPayload, now, drawdownBreach.get());
+            return List.of();
+        }
+
         if (signal.isStale(now)) {
             reject(signal, rawPayload, now, "signal expired at " + signal.validUntil());
+            return List.of();
+        }
+
+        Optional<String> concentrationBreach = riskGuard.checkConcentration(signal);
+        if (concentrationBreach.isPresent()) {
+            reject(signal, rawPayload, now, concentrationBreach.get());
             return List.of();
         }
 

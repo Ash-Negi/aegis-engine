@@ -12,6 +12,7 @@ import com.aegis.execution.order.OrderState;
 import com.aegis.execution.order.OrderStateMachine;
 import com.aegis.execution.portfolio.PortfolioSnapshot;
 import com.aegis.execution.rebalance.RebalanceService;
+import com.aegis.execution.risk.RiskGuard;
 import com.aegis.execution.signal.TargetWeightSignal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -59,6 +60,8 @@ class ExecutionServiceTest {
     @Autowired
     private SignalRecordRepository signals;
     @Autowired
+    private RiskGuard riskGuard;
+    @Autowired
     private AegisProperties properties;
 
     private ExecutionService service;
@@ -70,7 +73,7 @@ class ExecutionServiceTest {
                 Map.of("QQQ", new BigDecimal("100"), "GLDM", new BigDecimal("50")),
                 0.0, 0.0, 42L);
         service = new ExecutionService(
-                rebalanceService, stateMachine, broker, orders, fills, signals,
+                rebalanceService, stateMachine, broker, orders, fills, signals, riskGuard,
                 Clock.fixed(NOW, ZoneOffset.UTC), properties);
     }
 
@@ -135,7 +138,7 @@ class ExecutionServiceTest {
     void wrongSchemaVersionRefused() {
         TargetWeightSignal future = new TargetWeightSignal(
                 99, "sig-v99", NOW.minusSeconds(60), NOW.plusSeconds(3600), "2026-04-27",
-                "crisis", 0.9, Map.of("QQQ", BigDecimal.ONE),
+                "crisis", 0.9, Map.of("QQQ", new BigDecimal("0.5"), "GLDM", new BigDecimal("0.5")),
                 BigDecimal.ZERO, new BigDecimal("5"));
 
         service.onSignal(future, "{}", cashAccount(), prices());
@@ -159,6 +162,51 @@ class ExecutionServiceTest {
         assertThat(orders.findBySignalId("sig-bad")).isEmpty();
         assertThat(signals.findById("sig-bad").orElseThrow().getRejectReason())
                 .contains("sum to");
+    }
+
+    @Test
+    @DisplayName("a signal over the per-position concentration ceiling never becomes orders")
+    void concentrationBreachRefused() {
+        TargetWeightSignal overConcentrated = new TargetWeightSignal(
+                1, "sig-conc", NOW.minusSeconds(60), NOW.plusSeconds(3600), "2026-04-27",
+                "crisis", 0.9,
+                Map.of("QQQ", new BigDecimal("0.75"), "GLDM", new BigDecimal("0.25")),
+                BigDecimal.ZERO, new BigDecimal("5"));
+
+        service.onSignal(overConcentrated, "{}", cashAccount(), prices());
+
+        assertThat(orders.findBySignalId("sig-conc")).isEmpty();
+        assertThat(signals.findById("sig-conc").orElseThrow().getRejectReason())
+                .contains("concentration breach")
+                .contains("QQQ");
+    }
+
+    @Test
+    @DisplayName("trading halts once equity has fallen too far below its peak")
+    void drawdownBreachRefused() {
+        service.onSignal(signal("sig-peak", NOW.plusSeconds(3600)),
+                "{}", new PortfolioSnapshot(new BigDecimal("10000"), List.of()), prices());
+
+        TargetWeightSignal afterDrop = signal("sig-drop", NOW.plusSeconds(3600));
+        service.onSignal(afterDrop, "{}",
+                new PortfolioSnapshot(new BigDecimal("7000"), List.of()), prices());
+
+        assertThat(orders.findBySignalId("sig-drop")).isEmpty();
+        assertThat(signals.findById("sig-drop").orElseThrow().getRejectReason())
+                .contains("drawdown breach");
+    }
+
+    @Test
+    @DisplayName("a drop that stays inside the drawdown limit still trades")
+    void drawdownWithinLimitAllowed() {
+        service.onSignal(signal("sig-peak2", NOW.plusSeconds(3600)),
+                "{}", new PortfolioSnapshot(new BigDecimal("10000"), List.of()), prices());
+
+        List<Order> planned = service.onSignal(signal("sig-smalldrop", NOW.plusSeconds(3600)),
+                "{}", new PortfolioSnapshot(new BigDecimal("9000"), List.of()), prices());
+
+        assertThat(planned).isNotEmpty();
+        assertThat(signals.findById("sig-smalldrop").orElseThrow().isAccepted()).isTrue();
     }
 
     @Test
@@ -202,7 +250,8 @@ class ExecutionServiceTest {
         ExecutionService rejecting = new ExecutionService(
                 rebalanceService, stateMachine,
                 new MockBrokerClient(Map.of(), 1.0, 0.0, 1L),
-                orders, fills, signals, Clock.fixed(NOW, ZoneOffset.UTC), properties);
+                orders, fills, signals, riskGuard,
+                Clock.fixed(NOW, ZoneOffset.UTC), properties);
 
         rejecting.onSignal(signal("sig-rej", NOW.plusSeconds(3600)), "{}",
                 cashAccount(), prices());

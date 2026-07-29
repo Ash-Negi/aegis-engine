@@ -29,6 +29,10 @@ aegis:
       GLDM: 50
       VXUS: 25
 
+  risk:
+    max-position-weight: 0.60
+    max-drawdown-pct: 0.20
+
 logging:
   level:
     com.aegis.execution: DEBUG

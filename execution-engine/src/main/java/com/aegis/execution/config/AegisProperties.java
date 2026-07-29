@@ -17,6 +17,7 @@ public class AegisProperties {
     private final Signal signal = new Signal();
     private final Broker broker = new Broker();
     private final Account account = new Account();
+    private final Risk risk = new Risk();
 
     public Signal getSignal() {
         return signal;
@@ -28,6 +29,10 @@ public class AegisProperties {
 
     public Account getAccount() {
         return account;
+    }
+
+    public Risk getRisk() {
+        return risk;
     }
 
     public static class Signal {
@@ -132,6 +137,35 @@ public class AegisProperties {
 
         public void setPrices(Map<String, BigDecimal> prices) {
             this.prices = prices;
+        }
+    }
+
+    /**
+     * Runtime safety ceilings, independent of whatever the math engine's
+     * optimizer decided. A bug or a bad regime call upstream should not be
+     * able to over-concentrate the book or keep trading through a crash —
+     * these are enforced here regardless of what the signal claims.
+     */
+    public static class Risk {
+        /** A signal proposing more than this in one symbol is refused outright. */
+        private BigDecimal maxPositionWeight = new BigDecimal("0.60");
+        /** Trading halts once observed equity falls this far below its high-water mark. */
+        private BigDecimal maxDrawdownPct = new BigDecimal("0.20");
+
+        public BigDecimal getMaxPositionWeight() {
+            return maxPositionWeight;
+        }
+
+        public void setMaxPositionWeight(BigDecimal maxPositionWeight) {
+            this.maxPositionWeight = maxPositionWeight;
+        }
+
+        public BigDecimal getMaxDrawdownPct() {
+            return maxDrawdownPct;
+        }
+
+        public void setMaxDrawdownPct(BigDecimal maxDrawdownPct) {
+            this.maxDrawdownPct = maxDrawdownPct;
         }
     }
 }
